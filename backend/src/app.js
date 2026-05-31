@@ -30,7 +30,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: true,
+    origin: ["https://street-link.vercel.app", "http://localhost:8080"],
     credentials: true,
   }),
 );
