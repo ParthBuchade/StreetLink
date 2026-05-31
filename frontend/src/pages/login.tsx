@@ -125,11 +125,16 @@ const Login = () => {
 
       setIsLoading(true);
       try {
-        const userRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userRef);
+        // const userRef = doc(db, "users", user.uid);
+        // const userDoc = await getDoc(userRef);
 
-        if (userDoc.exists()) {
-          setUserRole(userDoc.data().role);
+        // if (userDoc.exists()) {
+        //   setUserRole(userDoc.data().role);
+        // }
+        const response = await API.get("/auth/me");
+
+        if (response.data.success) {
+          setUserRole(response.data.user.role);
         }
       } catch (error: any) {
         console.error("Error fetching user role:", error);
