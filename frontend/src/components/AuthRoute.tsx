@@ -1,11 +1,12 @@
 // src/components/AuthRoute.tsx
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '@/lib/firebase';
-import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { Loader2 } from 'lucide-react';
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuthState } from "react-firebase-hooks/auth";
+import { auth } from "@/lib/firebase";
+import { useEffect, useState } from "react";
+// import { doc, getDoc } from "firebase/firestore";
+// import { db } from "@/lib/firebase";
+import { Loader2 } from "lucide-react";
+import API from "@/services/api";
 
 interface AuthRouteProps {
   children: React.ReactNode;
@@ -19,15 +20,28 @@ const AuthRoute = ({ children, role }: AuthRouteProps) => {
   const location = useLocation();
 
   useEffect(() => {
+    // const fetchUserRole = async () => {
+    //   if (user) {
+    //     const userRef = doc(db, 'users', user.uid);
+    //     const userDoc = await getDoc(userRef);
+    //     if (userDoc.exists()) {
+    //       setUserRole(userDoc.data().role);
+    //     }
+    //     setIsLoading(false);
+    //   } else {
+    //     setIsLoading(false);
+    //   }
+    // };
     const fetchUserRole = async () => {
-      if (user) {
-        const userRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          setUserRole(userDoc.data().role);
+      try {
+        const response = await API.get("/auth/me");
+
+        if (response.data.success) {
+          setUserRole(response.data.user.role);
         }
-        setIsLoading(false);
-      } else {
+      } catch (error) {
+        console.error("Failed to fetch user role:", error);
+      } finally {
         setIsLoading(false);
       }
     };

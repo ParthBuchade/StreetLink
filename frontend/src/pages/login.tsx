@@ -200,7 +200,7 @@ const Login = () => {
       // }
 
       await setPersistence(auth, browserSessionPersistence);
-      await emailLogin(values.email, values.password, values.role);
+      await emailLogin(values.email, values.password);
 
       const currentUser = auth.currentUser;
 

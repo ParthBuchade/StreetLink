@@ -79,24 +79,37 @@ export const emailSignUp = async (
 };
 
 // Email login
+// export const emailLogin = async (
+//   email: string,
+//   password: string,
+//   role: "vendor" | "wholesaler" | "admin", // Updated roles
+// ) => {
+//   const userCredential = await signInWithEmailAndPassword(
+//     auth,
+//     email,
+//     password,
+//   );
+
+//   // Update user role in Firestore
+//   await createOrUpdateUser(userCredential.user.uid, {
+//     name: userCredential.user.displayName || "",
+//     email: userCredential.user.email || "",
+//     role,
+//     type: "email",
+//   });
+
+//   return userCredential;
+// };
+
 export const emailLogin = async (
   email: string,
-  password: string,
-  role: "vendor" | "wholesaler" | "admin", // Updated roles
+  password: string
 ) => {
   const userCredential = await signInWithEmailAndPassword(
     auth,
     email,
-    password,
+    password
   );
-
-  // Update user role in Firestore
-  await createOrUpdateUser(userCredential.user.uid, {
-    name: userCredential.user.displayName || "",
-    email: userCredential.user.email || "",
-    role,
-    type: "email",
-  });
 
   return userCredential;
 };
