@@ -26,6 +26,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 
+
 const app = express();
 
 app.use(
@@ -49,6 +50,7 @@ app.use("/api/suppliers", supplierRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 console.log("APP JS UPDATED");

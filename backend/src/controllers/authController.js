@@ -3,7 +3,8 @@ const db = require("../config/db");
 const syncUser = async (req, res) => {
   console.log(req.body);
   try {
-    const { uid, email, name, role } = req.body;
+    // const { uid, email, name, role } = req.body;
+    const { uid, email, name, role, phone, address } = req.body;
 
     const [existingUsers] = await db.query(
       "SELECT * FROM users WHERE firebase_uid = ?",
@@ -27,18 +28,33 @@ const syncUser = async (req, res) => {
       [uid, name, email, role],
     );
 
+    // if (role === "vendor") {
+    //   await db.query(
+    //     `
+    // INSERT INTO vendor_profiles
+    // (
+    //   user_id,
+    //   phone,
+    //   address
+    // )
+    // VALUES (?, ?, ?)
+    // `,
+    //     [result.insertId, "", ""],
+    //   );
+    // }
+
     if (role === "vendor") {
       await db.query(
         `
-    INSERT INTO vendor_profiles
-    (
-      user_id,
-      phone,
-      address
-    )
-    VALUES (?, ?, ?)
-    `,
-        [result.insertId, "", ""],
+INSERT INTO vendor_profiles
+(
+  user_id,
+  phone,
+  address
+)
+VALUES (?, ?, ?)
+`,
+        [result.insertId, phone || "", address || ""],
       );
     }
 
