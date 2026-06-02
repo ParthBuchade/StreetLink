@@ -706,12 +706,43 @@ const VendorPage = () => {
 
       let paymentResponse = null;
 
+      // if (paymentMethod === "online") {
+      //   paymentResponse = await API.post("/payments/create-order", {
+      //     amount: selectedProduct.price * quantity,
+      //   });
+
+      //   console.log("PAYMENT ORDER:", paymentResponse.data);
+      // }
+
       if (paymentMethod === "online") {
         paymentResponse = await API.post("/payments/create-order", {
           amount: selectedProduct.price * quantity,
         });
 
         console.log("PAYMENT ORDER:", paymentResponse.data);
+
+        // ✅ CREATE MYSQL ORDER BEFORE OPENING RAZORPAY
+        try {
+          const preOrderResponse = await API.post("/orders", {
+            supplier_id: selectedProduct.wholesalerId,
+            total_amount: selectedProduct.price * quantity,
+            payment_method: "online",
+            items: [
+              {
+                product_id: selectedProduct.id,
+                product_name: selectedProduct.name,
+                quantity,
+                price: selectedProduct.price,
+                subtotal: selectedProduct.price * quantity,
+              },
+            ],
+          });
+          mysqlOrderId = preOrderResponse.data.orderId; // ✅ now available inside handler
+          console.log("MYSQL ORDER CREATED BEFORE RAZORPAY:", mysqlOrderId);
+        } catch (error: any) {
+          toast.error("Failed to create order. Please try again.");
+          return;
+        }
       }
 
       // =========================
@@ -812,36 +843,36 @@ const VendorPage = () => {
 
                 razorpay_signature: response.razorpay_signature,
 
-                // mysql_order_id: mysqlOrderId,
+                mysql_order_id: mysqlOrderId,
               });
 
               // =========================
               // CREATE MYSQL ORDER
               // =========================
 
-              const orderResponse = await API.post("/orders", {
-                supplier_id: selectedProduct.wholesalerId,
+              // const orderResponse = await API.post("/orders", {
+              //   supplier_id: selectedProduct.wholesalerId,
 
-                total_amount: selectedProduct.price * quantity,
+              //   total_amount: selectedProduct.price * quantity,
 
-                payment_method: "online",
+              //   payment_method: "online",
 
-                items: [
-                  {
-                    product_id: selectedProduct.id,
+              //   items: [
+              //     {
+              //       product_id: selectedProduct.id,
 
-                    product_name: selectedProduct.name,
+              //       product_name: selectedProduct.name,
 
-                    quantity,
+              //       quantity,
 
-                    price: selectedProduct.price,
+              //       price: selectedProduct.price,
 
-                    subtotal: selectedProduct.price * quantity,
-                  },
-                ],
-              });
+              //       subtotal: selectedProduct.price * quantity,
+              //     },
+              //   ],
+              // });
 
-              mysqlOrderId = orderResponse.data.orderId;
+              // mysqlOrderId = orderResponse.data.orderId;
 
               // UPDATE STOCK
 
