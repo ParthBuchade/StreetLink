@@ -40,6 +40,12 @@ const formSchema = z.object({
   role: z.enum(["vendor", "wholesaler"], {
     required_error: "Please select a role.",
   }),
+  phone: z.string().min(10, {
+    message: "Enter a valid 10-digit phone number.",
+  }),
+  address: z.string().min(5, {
+    message: "Enter your full address.",
+  }),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -55,6 +61,8 @@ const SignUp = () => {
       email: "",
       password: "",
       role: "vendor",
+      phone: "", // ✅ ADD
+      address: "", // ✅ ADD
     },
   });
 
@@ -83,6 +91,8 @@ const SignUp = () => {
           email: user.email,
           name: values.name,
           role: values.role,
+          phone: values.phone, // ✅ ADD
+          address: values.address, // ✅ ADD
         },
         {
           headers: {
@@ -196,6 +206,43 @@ const SignUp = () => {
                           Must be 8+ chars with uppercase, lowercase, and
                           numbers
                         </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* ✅ ADD THIS — Phone field */}
+                  <FormField
+                    control={form.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="9876543210"
+                            type="tel"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* ✅ ADD THIS — Address field */}
+                  <FormField
+                    control={form.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Address</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Shop No. 5, MG Road, Pune"
+                            {...field}
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

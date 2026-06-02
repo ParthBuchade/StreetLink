@@ -149,9 +149,43 @@ const VendorPage = () => {
   const [mysqlOrders, setMysqlOrders] = useState<any[]>([]);
   const [showMyOrders, setShowMyOrders] = useState(false);
 
+  //— Vendor contact info states
+  const [vendorPhone, setVendorPhone] = useState("");
+  const [vendorAddress, setVendorAddress] = useState("");
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   const handleProductSelect = (product: Product) => {
     setSelectedProduct(product);
     console.log("Selected product:", product);
+  };
+
+  // ✅ ADD THIS — Save vendor phone & address to MySQL
+  const saveVendorProfile = async () => {
+    if (!vendorPhone || !vendorAddress) {
+      toast.error("Please enter both phone number and address");
+      return;
+    }
+    if (vendorPhone.length < 10) {
+      toast.error("Please enter a valid phone number");
+      return;
+    }
+    setIsSavingProfile(true);
+    try {
+      await API.patch("/auth/vendor-profile", {
+        phone: vendorPhone,
+        address: vendorAddress,
+      });
+      toast.success(
+        "Contact info saved! Wholesalers can now see your details.",
+      );
+      setShowProfileEdit(false);
+    } catch (error) {
+      console.log("SAVE PROFILE ERROR:", error);
+      toast.error("Failed to save contact info. Please try again.");
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const startVideoCall = (product: Product) => {
@@ -1240,6 +1274,17 @@ const VendorPage = () => {
                   )}
                 </div>
 
+                {/* ✅ ADD THIS — Edit contact info menu item */}
+                <DropdownMenuItem
+                  onClick={() => {
+                    setShowProfileEdit(true);
+                    setIsDropdownOpen(false);
+                  }}
+                >
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Edit Contact Info</span>
+                </DropdownMenuItem>
+
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
@@ -1491,6 +1536,58 @@ const VendorPage = () => {
           </div>
         )}
       </main>
+      {/* ✅ ADD THIS — Vendor Contact Info Dialog */}
+      {showProfileEdit && (
+        <Dialog open={showProfileEdit} onOpenChange={setShowProfileEdit}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Your Contact Info</DialogTitle>
+              <DialogDescription>
+                This phone number and address will be shown to wholesalers when
+                you place an order.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="vendor-phone">Phone Number</Label>
+                <Input
+                  id="vendor-phone"
+                  placeholder="9876543210"
+                  type="tel"
+                  value={vendorPhone}
+                  onChange={(e) => setVendorPhone(e.target.value)}
+                  maxLength={10}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="vendor-address">Address</Label>
+                <Textarea
+                  id="vendor-address"
+                  placeholder="Shop No. 5, MG Road, Pune - 411001"
+                  value={vendorAddress}
+                  onChange={(e) => setVendorAddress(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowProfileEdit(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700"
+                onClick={saveVendorProfile}
+                disabled={isSavingProfile}
+              >
+                {isSavingProfile ? "Saving..." : "Save Contact Info"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       {/* Location Edit Modal */}
       {showLocationEdit && (
         <Dialog open={showLocationEdit} onOpenChange={setShowLocationEdit}>
