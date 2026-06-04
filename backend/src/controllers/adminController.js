@@ -167,7 +167,7 @@ const getRecentOrders = async (req, res) => {
         o.created_at,
         vendor.name    AS vendor_name,
         supplier.business_name
-      FROM orders o USE INDEX (idx_orders_created_at)
+      FROM orders o
       JOIN users vendor     ON o.customer_id = vendor.id
       JOIN suppliers supplier ON o.supplier_id = supplier.id
       ORDER BY o.created_at DESC
@@ -192,13 +192,13 @@ const getWeeklyRevenue = async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT
-        DATE(created_at)                          AS day,
-        DAYNAME(created_at)                       AS day_name,
-        COUNT(*)                                  AS orders,
-        IFNULL(SUM(total_amount), 0)              AS revenue
+        DATE(created_at)                AS day,
+        DAYNAME(created_at)             AS day_name,
+        COUNT(*)                        AS orders,
+        IFNULL(SUM(total_amount), 0)    AS revenue
       FROM orders
-      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-      GROUP BY DATE(created_at)
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 DAY)
+      GROUP BY DATE(created_at), DAYNAME(created_at)
       ORDER BY DATE(created_at) ASC
     `);
 

@@ -324,24 +324,31 @@ const AdminPage = () => {
   const fetchDashboard = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const [statsRes, ordersRes, suppliersRes, weeklyRes] = await Promise.all([
+      const [statsRes, ordersRes, suppliersRes, weeklyRes] = await Promise.allSettled([
         API.get("/admin/stats"),
         API.get("/admin/orders"),
         API.get("/admin/suppliers"),
         API.get("/admin/weekly-revenue"),
       ]);
-      setStats(statsRes.data.stats);
-      setRecentOrders(ordersRes.data.orders);
-      setSuppliers(suppliersRes.data.suppliers);
-      // Map DB day_name → short 3-letter label for the chart
-      setWeeklyRevenue(
-        (weeklyRes.data.weeklyRevenue as any[]).map((r) => ({
-          day: r.day_name?.slice(0, 3) ?? r.day,
-          orders: Number(r.orders),
-          revenue: Number(r.revenue),
-        }))
-      );
-      setError(null);
+
+      // Core data — show error only if these fail
+      if (statsRes.status === "fulfilled") setStats(statsRes.value.data.stats);
+      if (ordersRes.status === "fulfilled") setRecentOrders(ordersRes.value.data.orders);
+      if (suppliersRes.status === "fulfilled") setSuppliers(suppliersRes.value.data.suppliers);
+
+      // Chart data — optional, fail silently with empty array
+      if (weeklyRes.status === "fulfilled") {
+        setWeeklyRevenue(
+          (weeklyRes.value.data.weeklyRevenue as any[]).map((r) => ({
+            day: r.day_name?.slice(0, 3) ?? String(r.day).slice(5),
+            orders: Number(r.orders),
+            revenue: Number(r.revenue),
+          }))
+        );
+      }
+
+      const coreFailed = [statsRes, ordersRes, suppliersRes].some(r => r.status === "rejected");
+      setError(coreFailed ? "Some dashboard data failed to load. Retrying…" : null);
       setLastRefreshed(new Date());
     } catch {
       setError("Failed to load dashboard. Check your connection.");
@@ -563,6 +570,11 @@ const AdminPage = () => {
                       <TrendingUp size={12} /> +12% this week
                     </div>
                   </div>
+                  {weeklyRevenue.length === 0 ? (
+                    <div className="h-[200px] flex items-center justify-center text-slate-400 text-sm">
+                      No order data for the past 7 days
+                    </div>
+                  ) : (
                   <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={weeklyRevenue} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                       <defs>
@@ -581,6 +593,7 @@ const AdminPage = () => {
                       <Area type="monotone" dataKey="revenue" stroke="#f97316" strokeWidth={2} fill="url(#revGrad)" />
                     </AreaChart>
                   </ResponsiveContainer>
+                  )}
                 </motion.div>
 
                 {/* pie charts */}
