@@ -14,7 +14,7 @@ class WholesalerGPT {
   private model: any;
 
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   }
 
   async processMessage(
@@ -57,7 +57,7 @@ class WholesalerGPT {
       const intentPrompt = `
         Classify this wholesaler/supplier message intent: "${userMessage}"
         
-        Respond ONLY with JSON:
+        Respond ONLY with JSON (no markdown, no extra text):
         {
           "intent": "analytics|inventory|bids|outreach|general|forecast"
         }
@@ -155,12 +155,22 @@ Provide a helpful, concise, business-focused response based on ONLY the data pro
         isBot: true,
         timestamp: new Date(),
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("WholesalerGPT Error:", error);
+
+      // Surface a helpful error message based on the error type
+      let errorMessage = "Sorry, I'm having trouble right now. Please try again in a moment.";
+      if (error?.message?.includes("API_KEY_INVALID") || error?.message?.includes("allowlist")) {
+        errorMessage = "⚠️ AI service configuration error. Please check the API key settings.";
+      } else if (error?.message?.includes("404") || error?.message?.includes("not found")) {
+        errorMessage = "⚠️ AI model unavailable. Please contact support.";
+      } else if (error?.message?.includes("quota") || error?.message?.includes("429")) {
+        errorMessage = "⚠️ AI quota exceeded. Please try again in a few minutes.";
+      }
+
       return {
         id: `bot_${Date.now()}`,
-        message:
-          "Sorry, I'm having trouble right now. Please try again in a moment.",
+        message: errorMessage,
         isBot: true,
         timestamp: new Date(),
       };

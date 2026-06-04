@@ -10,8 +10,7 @@ class VendorGPT {
   private model: any;
 
   constructor() {
-    // Use gemini-1.5-flash for reliability (gemini-2.5-flash may not be available)
-    this.model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   }
 
   async processMessage(
@@ -62,7 +61,6 @@ class VendorGPT {
         userMessage.toLowerCase().includes("quote");
 
       if (extractedData?.intent === "buy" && extractedData?.product_type && !isBulkOrder) {
-        // Search for products
         relevantProducts = await this.fetchRelevantProducts(
           extractedData.product_type,
           extractedData.budget,
@@ -72,23 +70,14 @@ class VendorGPT {
         if (relevantProducts.length > 0) {
           botResponse = this.generateProductResponse(extractedData, relevantProducts);
         } else {
-          botResponse = `I couldn't find any **${extractedData.product_type}** suppliers right now.
-
-Would you like to create a **Bid Request**? Wholesalers will see your request and respond directly.
-
-Just say: *"Bid ₹30/kg for 20kg ${extractedData.product_type}"* and I'll create it instantly!`;
+          botResponse = `I couldn't find any **${extractedData.product_type}** suppliers right now.\n\nWould you like to create a **Bid Request**? Wholesalers will see your request and respond directly.\n\nJust say: *"Bid ₹30/kg for 20kg ${extractedData.product_type}"* and I'll create it instantly!`;
         }
       } else if (isBidIntent) {
         if (!extractedData?.product_type) {
-          botResponse = `Please tell me what product you need and the quantity.
-
-Example: *"I need 20kg onions, bid ₹25/kg"*`;
+          botResponse = `Please tell me what product you need and the quantity.\n\nExample: *"I need 20kg onions, bid ₹25/kg"*`;
         } else if (!extractedData.budget) {
-          botResponse = `What is your **expected price per unit** for **${extractedData.product_type}**?
-
-Example: *"Bid ₹30/kg for ${extractedData?.quantity || "20kg"} ${extractedData.product_type}"*`;
+          botResponse = `What is your **expected price per unit** for **${extractedData.product_type}**?\n\nExample: *"Bid ₹30/kg for ${extractedData?.quantity || "20kg"} ${extractedData.product_type}"*`;
         } else if (userId && userName && userEmail) {
-          // Create the bid
           const parsedQty = this.parseQuantity(extractedData.quantity) || 10;
           const parsedBudget = this.parseBudget(extractedData.budget) || 0;
 
@@ -107,31 +96,12 @@ Example: *"Bid ₹30/kg for ${extractedData?.quantity || "20kg"} ${extractedData
               location: userLocation || "Not specified",
             });
 
-            botResponse = `✅ **Bid Request Created!**
-
-**Details:**
-- 🛒 Product: ${extractedData.product_type}
-- 📦 Quantity: ${parsedQty} units
-- 💰 Your Bid: ₹${parsedBudget}/unit
-- ⏰ Urgency: ${this.formatUrgency(extractedData.urgency)}
-- 📍 Location: ${userLocation || "Not specified"}
-
-Your request has been sent to all nearby wholesalers. You'll be notified when someone responds!
-
-**Bid ID:** \`${bidId}\`
-
-You can track your bids by clicking **📋 My Bids** at the top.`;
+            botResponse = `✅ **Bid Request Created!**\n\n**Details:**\n- 🛒 Product: ${extractedData.product_type}\n- 📦 Quantity: ${parsedQty} units\n- 💰 Your Bid: ₹${parsedBudget}/unit\n- ⏰ Urgency: ${this.formatUrgency(extractedData.urgency)}\n- 📍 Location: ${userLocation || "Not specified"}\n\nYour request has been sent to all nearby wholesalers. You'll be notified when someone responds!\n\n**Bid ID:** \`${bidId}\`\n\nYou can track your bids by clicking **📋 My Bids** at the top.`;
           }
         } else {
-          botResponse = `To create a bid, please tell me:
-- What product do you need?
-- How much quantity?
-- Your budget per unit
-
-Example: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
+          botResponse = `To create a bid, please tell me:\n- What product do you need?\n- How much quantity?\n- Your budget per unit\n\nExample: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
         }
       } else {
-        // General conversation
         const conversationPrompt = `
           You are VendorGPT, an AI assistant helping street food vendors and buyers find wholesale suppliers in India.
           User message: "${userMessage}"
@@ -158,12 +128,21 @@ Example: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
         timestamp: new Date(),
         products: relevantProducts.length > 0 ? relevantProducts : undefined,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("VendorGPT Error:", error);
+
+      let errorMessage = "Sorry, I'm having trouble processing your request right now. Please try again in a moment.";
+      if (error?.message?.includes("API_KEY_INVALID") || error?.message?.includes("allowlist")) {
+        errorMessage = "⚠️ AI service configuration error. Please check the API key settings.";
+      } else if (error?.message?.includes("404") || error?.message?.includes("not found")) {
+        errorMessage = "⚠️ AI model unavailable. Please contact support.";
+      } else if (error?.message?.includes("quota") || error?.message?.includes("429")) {
+        errorMessage = "⚠️ AI quota exceeded. Please try again in a few minutes.";
+      }
+
       return {
         id: `bot_${Date.now()}`,
-        message:
-          "Sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+        message: errorMessage,
         isBot: true,
         timestamp: new Date(),
       };
@@ -211,7 +190,6 @@ Example: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
 
   private parseAIResponse(response: string): any {
     try {
-      // Strip markdown code fences if present
       const cleaned = response
         .replace(/```json\s*/gi, "")
         .replace(/```\s*/g, "")
@@ -238,7 +216,6 @@ Example: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
       const products: Product[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        // Only show in-stock products
         if ((data.quantity || 0) > 0) {
           products.push({
             id: doc.id,
@@ -269,7 +246,6 @@ Example: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
         return nameMatch && budgetMatch;
       });
 
-      // If location is given, try to sort by matching city
       if (userLocation) {
         const loc = userLocation.toLowerCase();
         filtered.sort((a, b) => {
@@ -308,20 +284,12 @@ Example: *"I need 20kg onions, bid ₹30/kg, needed tomorrow"*`;
     const count = products.length;
     const productType = extractedData.product_type;
 
-    return `Found **${count} supplier${count > 1 ? "s" : ""}** for **${productType}**:
-
-${products
-  .map(
-    (p, i) =>
-      `${i + 1}. **${p.name}** — ₹${p.price}/unit
-   📍 ${p.address || p.city}
-   👤 ${p.wholesalerName || "Supplier"}
-   📦 Stock: ${p.quantity} units (Min: ${p.minOrder})
-   📞 ${p.countryCode} ${p.mobileNo}`,
-  )
-  .join("\n\n")}
-
-Would you like to place an order or need a different quantity? I can also create a **Bid Request** if you want a custom price.`;
+    return `Found **${count} supplier${count > 1 ? "s" : ""}** for **${productType}**:\n\n${products
+      .map(
+        (p, i) =>
+          `${i + 1}. **${p.name}** — ₹${p.price}/unit\n   📍 ${p.address || p.city}\n   👤 ${p.wholesalerName || "Supplier"}\n   📦 Stock: ${p.quantity} units (Min: ${p.minOrder})\n   📞 ${p.countryCode} ${p.mobileNo}`,
+      )
+      .join("\n\n")}\n\nWould you like to place an order or need a different quantity? I can also create a **Bid Request** if you want a custom price.`;
   }
 }
 
