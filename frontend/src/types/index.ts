@@ -23,7 +23,14 @@ export interface ChatMessage {
   products?: Product[];
 }
 
-
+export interface CounterOffer {
+  price: number;
+  quantity: number;
+  byWholesaler: string;
+  wholesalerName: string;
+  wholesalerId: string;
+  at: Date;
+}
 
 // src/types/index.ts
 export interface BidRequest {
@@ -37,14 +44,16 @@ export interface BidRequest {
   bidPrice: number;
   urgency: 'immediate' | 'today' | 'tomorrow' | 'this_week';
   location: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'completed' | 'order_placed';
+  status: 'pending' | 'accepted' | 'rejected' | 'completed' | 'order_placed' | 'counter_accepted' | 'counter_rejected';
   createdAt: Date;
   acceptedBy?: string;
   acceptedAt?: Date;
   wholesalerName?: string;
   wholesalerContact?: string;
-  orderId?: string; // New field for order tracking
-  orderPlacedAt?: Date; // New field for order timestamp
+  orderId?: string;
+  orderPlacedAt?: Date;
+  counterOffer?: CounterOffer;       // set by wholesaler when sending counter
+  counterRespondedAt?: Date;         // set by vendor when accepting/rejecting counter
 }
 
 export interface Order {

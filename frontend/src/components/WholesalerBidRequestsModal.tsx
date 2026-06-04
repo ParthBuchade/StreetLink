@@ -61,8 +61,6 @@ const WholesalerBidRequestsModal = ({
     setActionLoading(bidId);
     try {
       await onRejectBid(bidId);
-
-      // Notify vendor
       if (currentUser) {
         await createNotification({
           userId: vendorId,
@@ -79,28 +77,27 @@ const WholesalerBidRequestsModal = ({
   const handleCounterOffer = async (request: BidRequest) => {
     const newPrice = parseFloat(counterPrice);
     const newQty = counterQuantity ? parseInt(counterQuantity) : request.quantity;
-
     if (!newPrice || newPrice <= 0) return;
 
     setActionLoading(request.id);
     try {
       const bidRef = doc(db, 'bidRequests', request.id);
       await updateDoc(bidRef, {
-        status: 'pending', // Keep pending but add counter-offer data
+        status: 'pending',
         counterOffer: {
           price: newPrice,
           quantity: newQty,
           byWholesaler: currentUser?.uid || '',
+          wholesalerId: currentUser?.uid || '',
           wholesalerName: currentUser?.displayName || 'Wholesaler',
           at: new Date(),
         },
       });
 
-      // Notify vendor about counter-offer
       if (currentUser) {
         await createNotification({
           userId: request.vendorId,
-          title: 'Counter-Offer Received',
+          title: '🔄 Counter-Offer Received',
           message: `${currentUser.displayName} sent a counter-offer for ${request.productName}: ₹${newPrice}/unit for ${newQty} units.`,
           type: 'bid',
         });
@@ -136,7 +133,230 @@ const WholesalerBidRequestsModal = ({
     }
   };
 
+  // Separate bids by whether they need action vs already responded
+  const activeBids = bidRequests.filter(
+    (r) => r.status === 'pending' && !r.counterOffer,
+  );
+  const counterSentBids = bidRequests.filter(
+    (r) => r.status === 'pending' && r.counterOffer,
+  );
+  const respondedBids = bidRequests.filter(
+    (r) => r.status === 'counter_accepted' || r.status === 'counter_rejected',
+  );
+
   if (!isOpen) return null;
+
+  const renderCard = (request: BidRequest) => {
+    const isCounterSent = request.status === 'pending' && !!request.counterOffer;
+    const isCounterAccepted = request.status === 'counter_accepted';
+    const isCounterRejected = request.status === 'counter_rejected';
+
+    return (
+      <Card
+        key={request.id}
+        className={`border-l-4 hover:shadow-md transition-shadow ${
+          isCounterAccepted ? 'border-l-green-500 opacity-80' :
+          isCounterRejected ? 'border-l-red-500 opacity-80' :
+          isCounterSent ? 'border-l-orange-400' :
+          'border-l-blue-500'
+        }`}
+      >
+        <CardHeader className="pb-2">
+          <div className="flex justify-between items-start">
+            <CardTitle className="text-lg">{request.productName}</CardTitle>
+            <Badge variant={getUrgencyColor(request.urgency)}>
+              {formatUrgency(request.urgency)}
+            </Badge>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <div className="space-y-2 text-sm mb-4">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Vendor:</span>
+              <span className="font-medium">{request.vendorName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Quantity:</span>
+              <span className="font-medium">{request.quantity} units</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Their Bid:</span>
+              <span className="text-lg font-bold text-green-600">₹{request.bidPrice}/unit</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Total Value:</span>
+              <span className="font-bold text-blue-600">₹{request.bidPrice * request.quantity}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Location:</span>
+              <span className="font-medium truncate max-w-[150px]">{request.location}</span>
+            </div>
+            {request.description && (
+              <p className="text-gray-500 text-xs">{request.description}</p>
+            )}
+            <p className="text-xs text-gray-400">{request.createdAt.toLocaleString()}</p>
+          </div>
+
+          {/* ── COUNTER SENT — awaiting vendor response ── */}
+          {isCounterSent && request.counterOffer && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
+              <p className="text-sm font-semibold text-orange-700 mb-2">⏳ Counter-Offer Sent — Awaiting Vendor Response</p>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Your counter price:</span>
+                  <span className="font-bold text-orange-700">₹{request.counterOffer.price}/unit</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Counter quantity:</span>
+                  <span className="font-medium">{request.counterOffer.quantity} units</span>
+                </div>
+                <div className="flex justify-between font-semibold border-t pt-1">
+                  <span>Counter total:</span>
+                  <span className="text-orange-700">₹{request.counterOffer.price * request.counterOffer.quantity}</span>
+                </div>
+              </div>
+              <p className="text-xs text-orange-500 mt-2">
+                Sent {request.counterOffer.at instanceof Date
+                  ? request.counterOffer.at.toLocaleString()
+                  : new Date((request.counterOffer.at as any)?.seconds * 1000).toLocaleString()}
+              </p>
+            </div>
+          )}
+
+          {/* ── COUNTER ACCEPTED by vendor ── */}
+          {isCounterAccepted && request.counterOffer && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
+              <p className="text-sm font-semibold text-green-700">✅ Vendor Accepted Your Counter-Offer!</p>
+              <div className="text-sm text-green-600 mt-1 space-y-1">
+                <div className="flex justify-between">
+                  <span>Agreed price:</span>
+                  <span className="font-bold">₹{request.counterOffer.price}/unit × {request.counterOffer.quantity} units</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total:</span>
+                  <span className="font-bold">₹{request.counterOffer.price * request.counterOffer.quantity}</span>
+                </div>
+              </div>
+              {request.orderId && (
+                <p className="text-xs text-green-600 mt-1">Order #{request.orderId.slice(-8)} created.</p>
+              )}
+              {request.counterRespondedAt && (
+                <p className="text-xs text-green-500 mt-1">
+                  Responded: {request.counterRespondedAt instanceof Date
+                    ? request.counterRespondedAt.toLocaleString()
+                    : new Date((request.counterRespondedAt as any)?.seconds * 1000).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── COUNTER REJECTED by vendor ── */}
+          {isCounterRejected && request.counterOffer && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+              <p className="text-sm font-semibold text-red-700">❌ Vendor Rejected Your Counter-Offer</p>
+              <p className="text-xs text-red-600 mt-1">
+                {request.vendorName} declined ₹{request.counterOffer.price}/unit. The bid is now closed.
+              </p>
+              {request.counterRespondedAt && (
+                <p className="text-xs text-red-400 mt-1">
+                  Responded: {request.counterRespondedAt instanceof Date
+                    ? request.counterRespondedAt.toLocaleString()
+                    : new Date((request.counterRespondedAt as any)?.seconds * 1000).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── COUNTER-OFFER FORM (only for active, no counter sent yet) ── */}
+          {!isCounterSent && !isCounterAccepted && !isCounterRejected && counterOfferMode === request.id && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3 space-y-2">
+              <p className="text-sm font-semibold text-orange-700">Counter-Offer</p>
+              <div>
+                <label className="text-xs text-gray-600">Your Price (₹/unit)</label>
+                <Input
+                  type="number"
+                  placeholder={`Their bid: ₹${request.bidPrice}`}
+                  value={counterPrice}
+                  onChange={(e) => setCounterPrice(e.target.value)}
+                  className="mt-1 h-8 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600">Quantity (optional)</label>
+                <Input
+                  type="number"
+                  placeholder={`${request.quantity} units`}
+                  value={counterQuantity}
+                  onChange={(e) => setCounterQuantity(e.target.value)}
+                  className="mt-1 h-8 text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white text-xs"
+                  onClick={() => handleCounterOffer(request)}
+                  disabled={!counterPrice || actionLoading === request.id}
+                >
+                  {actionLoading === request.id ? 'Sending...' : 'Send Counter'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => {
+                    setCounterOfferMode(null);
+                    setCounterPrice('');
+                    setCounterQuantity('');
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ── ACTION BUTTONS (only for active bids with no counter sent) ── */}
+          {!isCounterSent && !isCounterAccepted && !isCounterRejected && (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-sm"
+                  onClick={() => handleAccept(request)}
+                  disabled={actionLoading === request.id}
+                >
+                  <Package className="h-3 w-3 mr-1" />
+                  {actionLoading === request.id ? 'Processing...' : `Accept (₹${request.bidPrice * request.quantity})`}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-sm"
+                  onClick={() => handleReject(request.id, request.vendorId, request.productName)}
+                  disabled={actionLoading === request.id}
+                >
+                  Reject
+                </Button>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full text-sm border-orange-300 text-orange-700 hover:bg-orange-50"
+                onClick={() => {
+                  setCounterOfferMode(counterOfferMode === request.id ? null : request.id);
+                  setCounterPrice('');
+                  setCounterQuantity('');
+                }}
+                disabled={actionLoading === request.id}
+              >
+                <MessageSquare className="h-3 w-3 mr-1" />
+                {counterOfferMode === request.id ? 'Cancel Counter' : 'Counter-Offer'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -146,9 +366,14 @@ const WholesalerBidRequestsModal = ({
           <div className="flex items-center space-x-3">
             <h3 className="text-xl font-bold">
               💰 Negotiation Requests
-              {bidRequests.length > 0 && (
+              {activeBids.length > 0 && (
                 <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-                  {bidRequests.length}
+                  {activeBids.length}
+                </span>
+              )}
+              {counterSentBids.length > 0 && (
+                <span className="ml-2 bg-orange-400 text-white text-xs px-2 py-0.5 rounded-full">
+                  {counterSentBids.length} awaiting
                 </span>
               )}
             </h3>
@@ -167,7 +392,7 @@ const WholesalerBidRequestsModal = ({
           </Button>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 space-y-8">
           {bidRequests.length === 0 ? (
             <div className="text-center py-16">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -177,135 +402,43 @@ const WholesalerBidRequestsModal = ({
               <p className="text-gray-500 mt-1">Vendor bids will appear here for you to accept, reject, or counter</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {bidRequests.map((request) => (
-                <Card key={request.id} className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <CardTitle className="text-lg">{request.productName}</CardTitle>
-                      <Badge variant={getUrgencyColor(request.urgency)}>
-                        {formatUrgency(request.urgency)}
-                      </Badge>
-                    </div>
-                  </CardHeader>
+            <>
+              {/* Active bids needing action */}
+              {activeBids.length > 0 && (
+                <section>
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                    Needs Action ({activeBids.length})
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {activeBids.map(renderCard)}
+                  </div>
+                </section>
+              )}
 
-                  <CardContent>
-                    <div className="space-y-2 text-sm mb-4">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Vendor:</span>
-                        <span className="font-medium">{request.vendorName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Quantity:</span>
-                        <span className="font-medium">{request.quantity} units</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Their Bid:</span>
-                        <span className="text-lg font-bold text-green-600">₹{request.bidPrice}/unit</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Total Value:</span>
-                        <span className="font-bold text-blue-600">₹{request.bidPrice * request.quantity}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Location:</span>
-                        <span className="font-medium truncate max-w-[150px]">{request.location}</span>
-                      </div>
-                      {request.description && (
-                        <p className="text-gray-500 text-xs">{request.description}</p>
-                      )}
-                      <p className="text-xs text-gray-400">
-                        {request.createdAt.toLocaleString()}
-                      </p>
-                    </div>
+              {/* Counter-offers awaiting vendor reply */}
+              {counterSentBids.length > 0 && (
+                <section>
+                  <h4 className="text-sm font-semibold text-orange-500 uppercase tracking-wide mb-3">
+                    Counter Sent — Awaiting Vendor ({counterSentBids.length})
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {counterSentBids.map(renderCard)}
+                  </div>
+                </section>
+              )}
 
-                    {/* Counter-offer form */}
-                    {counterOfferMode === request.id ? (
-                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3 space-y-2">
-                        <p className="text-sm font-semibold text-orange-700">Counter-Offer</p>
-                        <div>
-                          <label className="text-xs text-gray-600">Your Price (₹/unit)</label>
-                          <Input
-                            type="number"
-                            placeholder={`Their bid: ₹${request.bidPrice}`}
-                            value={counterPrice}
-                            onChange={(e) => setCounterPrice(e.target.value)}
-                            className="mt-1 h-8 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-600">Quantity (optional)</label>
-                          <Input
-                            type="number"
-                            placeholder={`${request.quantity} units`}
-                            value={counterQuantity}
-                            onChange={(e) => setCounterQuantity(e.target.value)}
-                            className="mt-1 h-8 text-sm"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="flex-1 bg-orange-600 hover:bg-orange-700 text-white text-xs"
-                            onClick={() => handleCounterOffer(request)}
-                            disabled={!counterPrice || actionLoading === request.id}
-                          >
-                            {actionLoading === request.id ? 'Sending...' : 'Send Counter'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs"
-                            onClick={() => {
-                              setCounterOfferMode(null);
-                              setCounterPrice('');
-                              setCounterQuantity('');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {/* Action buttons */}
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        <Button
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-sm"
-                          onClick={() => handleAccept(request)}
-                          disabled={actionLoading === request.id}
-                        >
-                          <Package className="h-3 w-3 mr-1" />
-                          {actionLoading === request.id ? 'Processing...' : `Accept (₹${request.bidPrice * request.quantity})`}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="text-sm"
-                          onClick={() => handleReject(request.id, request.vendorId, request.productName)}
-                          disabled={actionLoading === request.id}
-                        >
-                          Reject
-                        </Button>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="w-full text-sm border-orange-300 text-orange-700 hover:bg-orange-50"
-                        onClick={() => {
-                          setCounterOfferMode(counterOfferMode === request.id ? null : request.id);
-                          setCounterPrice('');
-                          setCounterQuantity('');
-                        }}
-                        disabled={actionLoading === request.id}
-                      >
-                        <MessageSquare className="h-3 w-3 mr-1" />
-                        {counterOfferMode === request.id ? 'Cancel Counter' : 'Counter-Offer'}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+              {/* Responded (accepted/rejected) */}
+              {respondedBids.length > 0 && (
+                <section>
+                  <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                    Resolved ({respondedBids.length})
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {respondedBids.map(renderCard)}
+                  </div>
+                </section>
+              )}
+            </>
           )}
         </div>
       </div>
