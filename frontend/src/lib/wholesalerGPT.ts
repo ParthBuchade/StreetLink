@@ -1,7 +1,5 @@
 // src/lib/wholesalerGPT.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "./firebase";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_AI_API_KEY);
 
@@ -178,7 +176,7 @@ Provide a helpful, concise, business-focused response based on ONLY the data pro
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       if (jsonMatch) return JSON.parse(jsonMatch[0]);
       return {};
-    } catch {
+    } catch (_e) {
       return {};
     }
   }

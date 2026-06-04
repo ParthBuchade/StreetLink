@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Send, MessageCircle, X, Bot, Sparkles, Mic, MicOff } from "lucide-react";
+import { Send, X, Bot, Sparkles, Mic, MicOff } from "lucide-react";
 import WholesalerGPT, { WholesalerChatMessage } from "../lib/wholesalerGPT";
 import { toast } from "sonner";
 
@@ -103,6 +103,7 @@ Ask me anything like:
       };
       setMessages([welcome]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   useEffect(() => {
@@ -132,7 +133,8 @@ Ask me anything like:
         { stats, products, bidRequests, recentOrders },
       );
       setMessages((prev) => [...prev, response]);
-    } catch {
+    } catch (error) {
+      console.error("WholesalerGPT send error:", error);
       toast.error("Something went wrong. Please try again.");
       setMessages((prev) => [
         ...prev,

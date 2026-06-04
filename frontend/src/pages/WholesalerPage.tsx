@@ -34,7 +34,6 @@ import API from "@/services/api";
 import { getSupplierProfile } from "@/services/supplier";
 import IncomingOrdersModal from "@/components/IncomingOrdersModal";
 import { createNotification } from "@/lib/notifications";
-import NotificationBell from "@/components/NotificationBell";
 import WholesalerGPTComponent from "@/components/WholesalerGPT";
 interface Product {
   id?: string;
@@ -302,6 +301,54 @@ const WholesalerPage = () => {
     }
   };
 
+  const fetchMysqlOrders = async () => {
+    try {
+      const response = await API.get("/orders/supplier");
+
+      console.log("SUPPLIER MYSQL ORDERS:", response.data);
+
+      const latestOrders = response.data.orders || [];
+
+      if (
+        previousOrderCount.current &&
+        latestOrders.length > previousOrderCount.current
+      ) {
+        new Audio("/notification.mp3").play();
+
+        toast({
+          title: "New Marketplace Order",
+
+          description: "You received a new order",
+        });
+      }
+
+      previousOrderCount.current = latestOrders.length;
+
+      setMysqlOrders(latestOrders);
+
+      const orders = response.data.orders || [];
+
+      setStats((prev) => ({
+        ...prev,
+
+        totalOrders: orders.length,
+
+        deliveredOrders: orders.filter((o) => o.order_status === "delivered")
+          .length,
+
+        pendingOrders: orders.filter(
+          (o) => o.order_status === "placed" || o.order_status === "accepted",
+        ).length,
+
+        totalRevenue: orders
+          .filter((o) => o.order_status === "delivered")
+          .reduce((sum, order) => sum + Number(order.total_amount), 0),
+      }));
+    } catch (error) {
+      console.log("FETCH MYSQL SUPPLIER ORDERS ERROR:", error);
+    }
+  };
+
   const updateMysqlOrderStatus = async (orderId: number, status: string) => {
     try {
       await API.patch(`/orders/${orderId}`, { status });
@@ -419,54 +466,6 @@ const WholesalerPage = () => {
 
         description: "Failed to update payment",
       });
-    }
-  };
-
-  const fetchMysqlOrders = async () => {
-    try {
-      const response = await API.get("/orders/supplier");
-
-      console.log("SUPPLIER MYSQL ORDERS:", response.data);
-
-      const latestOrders = response.data.orders || [];
-
-      if (
-        previousOrderCount.current &&
-        latestOrders.length > previousOrderCount.current
-      ) {
-        new Audio("/notification.mp3").play();
-
-        toast({
-          title: "New Marketplace Order",
-
-          description: "You received a new order",
-        });
-      }
-
-      previousOrderCount.current = latestOrders.length;
-
-      setMysqlOrders(latestOrders);
-
-      const orders = response.data.orders || [];
-
-      setStats((prev) => ({
-        ...prev,
-
-        totalOrders: orders.length,
-
-        deliveredOrders: orders.filter((o) => o.order_status === "delivered")
-          .length,
-
-        pendingOrders: orders.filter(
-          (o) => o.order_status === "placed" || o.order_status === "accepted",
-        ).length,
-
-        totalRevenue: orders
-          .filter((o) => o.order_status === "delivered")
-          .reduce((sum, order) => sum + Number(order.total_amount), 0),
-      }));
-    } catch (error) {
-      console.log("FETCH MYSQL SUPPLIER ORDERS ERROR:", error);
     }
   };
 
