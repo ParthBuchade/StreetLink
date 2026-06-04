@@ -163,11 +163,41 @@ const MyBidsModal = ({ isOpen, onClose, bidRequests, onRefresh }: MyBidsModalPro
                       </div>
                     )}
 
-                    {request.status === 'pending' && (
+                    {request.status === 'pending' && !(request as any).counterOffer && (
                       <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
                         <h5 className="font-medium text-yellow-800">⏳ Bid Pending</h5>
                         <p className="text-sm text-yellow-700">
                           Your bid is waiting for wholesaler response. You'll be notified when someone accepts.
+                        </p>
+                      </div>
+                    )}
+
+                    {request.status === 'pending' && (request as any).counterOffer && (
+                      <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <h5 className="font-medium text-orange-800">🔄 Counter-Offer Received!</h5>
+                        <p className="text-sm text-orange-700 mt-1">
+                          <strong>{(request as any).counterOffer.wholesalerName}</strong> sent a counter-offer:
+                        </p>
+                        <div className="mt-2 space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Your bid:</span>
+                            <span className="font-medium">₹{request.bidPrice}/unit</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Counter price:</span>
+                            <span className="font-bold text-orange-700">₹{(request as any).counterOffer.price}/unit</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Counter quantity:</span>
+                            <span className="font-medium">{(request as any).counterOffer.quantity} units</span>
+                          </div>
+                          <div className="flex justify-between font-semibold">
+                            <span>Counter total:</span>
+                            <span className="text-orange-700">₹{(request as any).counterOffer.price * (request as any).counterOffer.quantity}</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-orange-600 mt-2">
+                          Contact the wholesaler to accept this counter-offer or negotiate further via VendorGPT.
                         </p>
                       </div>
                     )}

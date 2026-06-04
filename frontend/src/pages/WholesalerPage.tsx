@@ -35,6 +35,7 @@ import { getSupplierProfile } from "@/services/supplier";
 import IncomingOrdersModal from "@/components/IncomingOrdersModal";
 import { createNotification } from "@/lib/notifications";
 import NotificationBell from "@/components/NotificationBell";
+import WholesalerGPTComponent from "@/components/WholesalerGPT";
 interface Product {
   id?: string;
   name: string;
@@ -1395,6 +1396,31 @@ const WholesalerPage = () => {
             displayName: user?.displayName || "Wholesaler",
             email: user?.email || "",
           }}
+        />
+      )}
+
+      {/* SupplierGPT — Business Intelligence Chatbot */}
+      {user && (
+        <WholesalerGPTComponent
+          wholesalerId={user.uid}
+          wholesalerName={user.displayName || "Wholesaler"}
+          stats={stats}
+          products={products.map((p) => ({
+            name: p.name,
+            price: p.price,
+            quantity: p.quantity,
+            minOrder: p.minOrder,
+          }))}
+          bidRequests={bidRequests.map((b) => ({
+            productName: b.productName,
+            quantity: b.quantity,
+            bidPrice: b.bidPrice,
+            vendorName: b.vendorName,
+            urgency: b.urgency,
+            location: b.location,
+            createdAt: b.createdAt,
+          }))}
+          recentOrders={mysqlOrders.slice(0, 10)}
         />
       )}
     </div>

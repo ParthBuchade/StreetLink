@@ -1991,12 +1991,13 @@ const VendorPage = () => {
           }}
         />
       )}
-      console.log( "VENDOR PAGE LOCATION:", userLocation );
       <VendorGPTComponent
         onProductSelect={handleProductSelect}
         userLocation={
           userLocation?.address ||
-          `${userLocation?.city || ""} ${userLocation?.state || ""}`
+          (userLocation?.city
+            ? `${userLocation.city}${userLocation.state ? `, ${userLocation.state}` : ""}${userLocation.pincode ? ` (${userLocation.pincode})` : ""}`
+            : undefined)
         }
       />
       <Footer />
