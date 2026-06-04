@@ -11,7 +11,7 @@ class VendorGPT {
 
   constructor() {
     // Use gemini-1.5-flash for reliability (gemini-2.5-flash may not be available)
-    this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    this.model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   }
 
   async processMessage(
