@@ -1,341 +1,269 @@
 import { Card, CardContent } from "@/components/ui/card";
-
 import { Button } from "@/components/ui/button";
-
-import { X } from "lucide-react";
+import { X, IndianRupee, PackageCheck, Clock } from "lucide-react";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   orders: any[];
+  bidOrders?: any[];
   updateMysqlOrderStatus: (id: number, status: string) => void;
   markPaymentReceived: (id: number) => void;
+  markBidOrderPaid?: (firestoreBidId: string) => void;
 }
 
 const formatDate = (date: string) => {
   if (!date) return "—";
-
   return new Date(date).toLocaleString("en-IN", {
     dateStyle: "medium",
     timeStyle: "short",
   });
 };
 
+const PaymentBadge = ({ status }: { status: string }) => (
+  <span
+    className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 ${
+      status === "paid"
+        ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+        : "bg-amber-100 text-amber-700 border border-amber-200"
+    }`}
+  >
+    <IndianRupee size={10} />
+    {status === "paid" ? "Paid" : "Payment Pending"}
+  </span>
+);
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const map: Record<string, string> = {
+    placed:    "bg-yellow-100 text-yellow-700 border border-yellow-200",
+    accepted:  "bg-blue-100 text-blue-700 border border-blue-200",
+    delivered: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+    confirmed: "bg-blue-100 text-blue-700 border border-blue-200",
+    shipped:   "bg-violet-100 text-violet-700 border border-violet-200",
+    cancelled: "bg-red-100 text-red-700 border border-red-200",
+  };
+  return (
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${map[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {status}
+    </span>
+  );
+};
+
 const IncomingOrdersModal = ({
   isOpen,
   onClose,
   orders,
+  bidOrders = [],
   updateMysqlOrderStatus,
   markPaymentReceived,
+  markBidOrderPaid,
 }: Props) => {
   if (!isOpen) return null;
 
-  console.log("INCOMING ORDERS:", orders);
-  return (
-    <div
-      className="
-        fixed
-        inset-0
-        bg-black/70
-        z-50
-        flex
-        items-center
-        justify-center
-        p-4
-      "
-    >
-      <div
-        className="
-          bg-white
-          rounded-xl
-          max-w-4xl
-          w-full
-          max-h-[90vh]
-          overflow-y-auto
-        "
-      >
-        <div
-          className="
-            sticky
-            top-0
-            bg-white
-            p-4
-            border-b
-            flex
-            justify-between
-            items-center
-          "
-        >
-          <h2
-            className="
-              text-2xl
-              font-bold
-            "
-          >
-            Incoming Orders
-          </h2>
+  const pendingBidPayments = bidOrders.filter(
+    (o) => o.payment_status === "pending" && o.order_status !== "cancelled"
+  );
 
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="sticky top-0 bg-white p-4 border-b flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold">Incoming Orders</h2>
+            {pendingBidPayments.length > 0 && (
+              <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                {pendingBidPayments.length} bid payment{pendingBidPayments.length > 1 ? "s" : ""} pending
+              </span>
+            )}
+          </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />
           </Button>
         </div>
 
-        <div className="p-6">
-          {orders.length === 0 ? (
-            <p className="text-gray-500">No incoming orders</p>
-          ) : (
-            <div className="space-y-4">
-              {orders.map((order) => (
-                <Card
-                  key={order.id}
-                  className="
-                    border-l-4
-                    border-l-green-500
-                  "
-                >
-                  <CardContent className="p-4">
-                    <div
-                      className="
-                        flex
-                        justify-between
-                        items-start
-                        mb-4
-                      "
-                    >
-                      <div>
-                        <h3
-                          className="
-                            text-lg
-                            font-bold
-                          "
-                        >
-                          {order.product_name}
-                        </h3>
+        <div className="p-6 space-y-8">
 
-                        <p
-                          className="
-                            text-sm
-                            text-gray-500
-                          "
-                        >
-                          Order #{order.id}
-                        </p>
+          {/* ── MARKETPLACE ORDERS ── */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              Marketplace Orders ({orders.length})
+            </h3>
+
+            {orders.length === 0 ? (
+              <p className="text-gray-400 text-sm py-4">No marketplace orders yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {orders.map((order) => (
+                  <Card key={order.id} className="border-l-4 border-l-blue-500">
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold">{order.product_name ?? "Marketplace Order"}</h3>
+                          <p className="text-sm text-gray-500">Order #{order.id}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">📅 {formatDate(order.created_at)}</p>
+                        </div>
+                        <div className="flex gap-2 flex-wrap justify-end">
+                          <StatusBadge status={order.order_status} />
+                          <PaymentBadge status={order.payment_status} />
+                        </div>
                       </div>
 
-                      <div
-                        className="
-                          flex
-                          gap-2
-                          flex-wrap
-                        "
-                      >
-                        <span
-                          className={`
-                            px-3
-                            py-1
-                            rounded-full
-                            text-xs
-                            font-medium
-
-                            ${
-                              order.order_status === "placed"
-                                ? "bg-yellow-300 text-black"
-                                : order.order_status === "accepted"
-                                  ? "bg-green-600 text-white"
-                                  : order.order_status === "delivered"
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-red-600 text-white"
-                            }
-                          `}
-                        >
-                          {order.order_status}
-                        </span>
-
-                        <span
-                          className={`
-                            px-3
-                            py-1
-                            rounded-full
-                            text-xs
-                            font-medium
-
-                            ${
-                              order.payment_status === "paid"
-                                ? "bg-green-700 text-white"
-                                : "bg-orange-300 text-black"
-                            }
-                          `}
-                        >
-                          {order.payment_status}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div
-                      className="
-                        grid
-                        grid-cols-2
-                        gap-4
-                        text-sm
-                        mb-4
-                      "
-                    >
-                      <div>
-                        <strong>Vendor:</strong> {order.vendor_name}
+                      <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                        <div><strong>Vendor:</strong> {order.vendor_name}</div>
+                        <div><strong>Phone:</strong> {order.phone ?? "—"}</div>
+                        <div><strong>Total:</strong> <span className="font-bold text-green-700">₹{order.total_amount}</span></div>
+                        <div><strong>Payment:</strong> {order.payment_method === "online" ? "Online" : "Cash on Delivery"}</div>
+                        {order.address && (
+                          <div className="col-span-2"><strong>Address:</strong> {order.address}</div>
+                        )}
                       </div>
 
-                      {/* <div>
-                        <strong>Quantity:</strong> {order.quantity}
-                      </div> */}
-
-                      <div>
-                        <strong>Phone:</strong> {order.phone}
-                      </div>
-
-                      <div>
-                        <strong>Total:</strong> ₹{order.total_amount}
-                      </div>
-
-                      <div>
-                        <strong>Payment Method:</strong>{" "}
-                        {order.payment_method === "online"
-                          ? "Online Payment"
-                          : "Cash on Delivery"}
-                      </div>
-
-                      <div className="col-span-2">
-                        <strong>Address:</strong> {order.address}
-                      </div>
-
-                      <div className="mt-4">
-                        <p
-                          className="
-    font-bold
-    mb-2
-  "
-                        >
-                          Products:
-                        </p>
-
-                        <div className="space-y-2">
-                          {order.items?.map((item: any, index: number) => (
-                            <div
-                              key={index}
-                              className="
-          bg-gray-50
-          border
-          rounded-lg
-          p-3
-        "
-                            >
-                              <p className="font-semibold">
-                                {item.product_name}
-                              </p>
-
-                              <p className="text-sm text-gray-600">
-                                Quantity: {item.quantity}
-                              </p>
-
-                              <p className="text-sm text-gray-600">
-                                Price: ₹{item.price}
-                              </p>
-
-                              <p
-                                className="
-            text-sm
-            font-medium
-            text-green-600
-          "
-                              >
-                                Subtotal: ₹{item.subtotal}
-                              </p>
+                      {order.items?.length > 0 && (
+                        <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-2">
+                          <p className="font-semibold text-sm">Products:</p>
+                          {order.items.map((item: any, i: number) => (
+                            <div key={i} className="flex justify-between text-sm">
+                              <span>{item.product_name} × {item.quantity}</span>
+                              <span className="font-medium text-green-700">₹{item.subtotal}</span>
                             </div>
                           ))}
                         </div>
+                      )}
+
+                      {order.delivered_at && (
+                        <p className="text-xs text-gray-500 mb-2">📦 Delivered: {formatDate(order.delivered_at)}</p>
+                      )}
+                      {order.paid_at && (
+                        <p className="text-xs text-emerald-600 mb-2">💳 Paid: {formatDate(order.paid_at)}</p>
+                      )}
+
+                      {/* Order action buttons */}
+                      <div className="flex gap-2 flex-wrap mt-2">
+                        {order.order_status === "placed" && (
+                          <>
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700"
+                              onClick={() => updateMysqlOrderStatus(order.id, "accepted")}>
+                              Accept
+                            </Button>
+                            <Button size="sm" variant="destructive"
+                              onClick={() => updateMysqlOrderStatus(order.id, "cancelled")}>
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        {order.order_status === "accepted" && (
+                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700"
+                            onClick={() => updateMysqlOrderStatus(order.id, "delivered")}>
+                            Mark Delivered
+                          </Button>
+                        )}
+                        {order.order_status === "delivered" &&
+                          order.payment_method === "cod" &&
+                          order.payment_status === "pending" && (
+                            <Button size="sm" className="bg-purple-600 hover:bg-purple-700"
+                              onClick={() => markPaymentReceived(order.id)}>
+                              <IndianRupee size={13} className="mr-1" />
+                              Mark Payment Received
+                            </Button>
+                          )}
                       </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
 
-                      <div className="col-span-2 mt-2">
-                        <div className="space-y-1 text-sm text-gray-600">
-                          <p>
-                            📅 <strong>Ordered On:</strong>{" "}
-                            {formatDate(order.created_at)}
-                          </p>
+          {/* ── BID / NEGOTIATION ORDERS ── */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+              Bid / Negotiation Orders ({bidOrders.length})
+              {pendingBidPayments.length > 0 && (
+                <span className="bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {pendingBidPayments.length} unpaid
+                </span>
+              )}
+            </h3>
 
-                          {order.delivered_at && (
-                            <p>
-                              📦 <strong>Delivered On:</strong>{" "}
-                              {formatDate(order.delivered_at)}
-                            </p>
-                          )}
-
-                          {order.paid_at && (
-                            <p>
-                              💳 <strong>Paid On:</strong>{" "}
-                              {formatDate(order.paid_at)}
-                            </p>
-                          )}
+            {bidOrders.length === 0 ? (
+              <p className="text-gray-400 text-sm py-4">No bid orders yet. Accepted bids will appear here.</p>
+            ) : (
+              <div className="space-y-4">
+                {bidOrders.map((order) => (
+                  <Card
+                    key={order.id}
+                    className={`border-l-4 ${
+                      order.payment_status === "paid" ? "border-l-emerald-500" :
+                      order.order_status === "cancelled" ? "border-l-gray-300" :
+                      "border-l-amber-400"
+                    }`}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h3 className="text-lg font-bold">{order.product_name}</h3>
+                          <p className="text-sm text-gray-500">Bid Order #{order.id}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">📅 {formatDate(order.created_at)}</p>
+                        </div>
+                        <div className="flex gap-2 flex-wrap justify-end">
+                          <StatusBadge status={order.order_status} />
+                          <PaymentBadge status={order.payment_status} />
                         </div>
                       </div>
-                    </div>
 
-                    {order.order_status === "placed" && (
-                      <div className="flex gap-3">
-                        <Button
-                          className="
-                            bg-green-600
-                            hover:bg-green-700
-                          "
-                          onClick={() =>
-                            updateMysqlOrderStatus(order.id, "accepted")
-                          }
-                        >
-                          Accept
-                        </Button>
-
-                        <Button
-                          variant="destructive"
-                          onClick={() =>
-                            updateMysqlOrderStatus(order.id, "cancelled")
-                          }
-                        >
-                          Reject
-                        </Button>
+                      <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                        <div><strong>Vendor:</strong> {order.vendor_name}</div>
+                        <div><strong>Phone:</strong> {order.vendor_phone ?? "—"}</div>
+                        <div><strong>Qty:</strong> {order.quantity} units @ ₹{order.price_per_unit}/unit</div>
+                        <div><strong>Total:</strong> <span className="font-bold text-green-700">₹{order.total_amount}</span></div>
+                        {order.vendor_address && (
+                          <div className="col-span-2"><strong>Address:</strong> {order.vendor_address}</div>
+                        )}
                       </div>
-                    )}
 
-                    {order.order_status === "accepted" && (
-                      <Button
-                        className="
-                          bg-blue-600
-                          hover:bg-blue-700
-                        "
-                        onClick={() =>
-                          updateMysqlOrderStatus(order.id, "delivered")
-                        }
-                      >
-                        Mark Delivered
-                      </Button>
-                    )}
-
-                    {order.order_status === "delivered" &&
-                      order.payment_method === "cod" &&
-                      order.payment_status === "pending" && (
-                        <Button
-                          className="
-      bg-purple-600
-      hover:bg-purple-700
-      mt-3
-    "
-                          onClick={() => markPaymentReceived(order.id)}
-                        >
-                          Mark Payment Received
-                        </Button>
+                      {/* Payment warning for pending bid orders */}
+                      {order.payment_status === "pending" && order.order_status !== "cancelled" && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-start gap-2">
+                          <Clock size={14} className="text-amber-600 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-sm font-semibold text-amber-700">Payment Pending</p>
+                            <p className="text-xs text-amber-600 mt-0.5">
+                              Vendor has placed this bid order but payment has not been received yet.
+                              Once they pay (online or in-person), mark it as received below.
+                            </p>
+                          </div>
+                        </div>
                       )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+
+                      {order.paid_at && (
+                        <p className="text-xs text-emerald-600 mb-2">💳 Paid: {formatDate(order.paid_at)}</p>
+                      )}
+                      {order.delivered_at && (
+                        <p className="text-xs text-gray-500 mb-2">📦 Delivered: {formatDate(order.delivered_at)}</p>
+                      )}
+
+                      {/* Bid order action: mark payment received */}
+                      {order.payment_status === "pending" &&
+                        order.order_status !== "cancelled" &&
+                        markBidOrderPaid && (
+                          <Button
+                            size="sm"
+                            className="bg-purple-600 hover:bg-purple-700 mt-1"
+                            onClick={() => markBidOrderPaid(order.firestore_bid_id)}
+                          >
+                            <IndianRupee size={13} className="mr-1" />
+                            Mark Payment Received
+                          </Button>
+                        )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+
         </div>
       </div>
     </div>

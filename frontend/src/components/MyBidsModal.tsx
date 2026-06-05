@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { createNotification } from '@/lib/notifications';
+import API from '@/services/api';
 
 interface MyBidsModalProps {
   isOpen: boolean;
@@ -81,6 +82,22 @@ const MyBidsModal = ({ isOpen, onClose, bidRequests, onRefresh }: MyBidsModalPro
         message: `${request.vendorName} accepted your counter-offer for ${request.productName}: ₹${counter.price}/unit × ${counter.quantity} units.`,
         type: 'bid',
       });
+
+      // Sync bid order to MySQL for revenue tracking
+      try {
+        await API.post('/bid-orders/sync', {
+          firestore_bid_id: request.id,
+          firestore_order_id: orderRef.id,
+          vendor_firebase_uid: request.vendorId,
+          supplier_firebase_uid: counter.byWholesaler,
+          product_name: request.productName,
+          quantity: counter.quantity,
+          price_per_unit: counter.price,
+          total_amount: counter.price * counter.quantity,
+        });
+      } catch (syncErr) {
+        console.log('Bid order MySQL sync error (non-critical):', syncErr);
+      }
 
       await onRefresh();
     } catch (error) {

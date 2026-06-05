@@ -74,18 +74,38 @@ interface Order {
   created_at: string;
 }
 
+interface BidOrder {
+  id: number;
+  firestore_bid_id: string;
+  vendor_name: string;
+  wholesaler_name: string;
+  product_name: string;
+  quantity: number;
+  price_per_unit: number;
+  total_amount: number;
+  payment_status: string;
+  order_status: string;
+  created_at: string;
+  delivered_at?: string;
+  paid_at?: string;
+}
+
 interface Stats {
   totalUsers: number;
   totalVendors: number;
   totalSuppliers: number;
   totalOrders: number;
   totalRevenue: number;
+  marketplaceRevenue: number;
+  bidRevenue: number;
   pendingVerifications: number;
   deliveredOrders: number;
   pendingCOD: number;
+  totalBidOrders: number;
+  pendingBidPayments: number;
 }
 
-type NavTab = "overview" | "suppliers" | "orders";
+type NavTab = "overview" | "suppliers" | "orders" | "bids";
 type SupplierFilter = "all" | "pending" | "verified" | "rejected" | "suspended";
 
 // ─────────────────────────────────────────────
@@ -108,23 +128,33 @@ const timeAgo = (dateStr: string) => {
   return `${Math.floor(h / 24)}d ago`;
 };
 
+const formatExactDate = (dateStr: string) =>
+  new Date(dateStr).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
 const statusColor: Record<string, string> = {
-  pending:      "bg-amber-100 text-amber-700 border border-amber-200",
+  pending: "bg-amber-100 text-amber-700 border border-amber-200",
   under_review: "bg-blue-100 text-blue-700 border border-blue-200",
-  verified:     "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  rejected:     "bg-red-100 text-red-700 border border-red-200",
-  suspended:    "bg-slate-100 text-slate-600 border border-slate-200",
-  placed:       "bg-blue-100 text-blue-700 border border-blue-200",
-  accepted:     "bg-violet-100 text-violet-700 border border-violet-200",
-  delivered:    "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  cancelled:    "bg-red-100 text-red-700 border border-red-200",
-  paid:         "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  cod:          "bg-amber-100 text-amber-700 border border-amber-200",
-  online:       "bg-sky-100 text-sky-700 border border-sky-200",
+  verified: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  rejected: "bg-red-100 text-red-700 border border-red-200",
+  suspended: "bg-slate-100 text-slate-600 border border-slate-200",
+  placed: "bg-blue-100 text-blue-700 border border-blue-200",
+  accepted: "bg-violet-100 text-violet-700 border border-violet-200",
+  delivered: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  cancelled: "bg-red-100 text-red-700 border border-red-200",
+  paid: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  cod: "bg-amber-100 text-amber-700 border border-amber-200",
+  online: "bg-sky-100 text-sky-700 border border-sky-200",
 };
 
 interface WeeklyPoint {
-  day: string;       // "Mon", "Tue" …
+  day: string;
   orders: number;
   revenue: number;
 }
@@ -216,12 +246,21 @@ const SupplierDrawer = ({
           <div className="flex-1 p-6 space-y-6">
             {/* status badge */}
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor[supplier.verification_status] ?? "bg-gray-100 text-gray-600"}`}>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  statusColor[supplier.verification_status] ?? "bg-gray-100 text-gray-600"
+                }`}
+              >
                 {supplier.verification_status}
               </span>
               {supplier.created_at && (
                 <span className="text-xs text-slate-400">
-                  Joined {new Date(supplier.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  Joined{" "}
+                  {new Date(supplier.created_at).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
                 </span>
               )}
             </div>
@@ -234,7 +273,13 @@ const SupplierDrawer = ({
                 { icon: MapPin, label: "Address", value: supplier.address || "—" },
                 { icon: Hash, label: "GST Number", value: supplier.gst_number || "—" },
                 { icon: FileText, label: "PAN Number", value: supplier.pan_number || "—" },
-                { icon: FileText, label: "Aadhaar", value: supplier.aadhaar_number ? "••••••" + supplier.aadhaar_number.slice(-4) : "—" },
+                {
+                  icon: FileText,
+                  label: "Aadhaar",
+                  value: supplier.aadhaar_number
+                    ? "••••••" + supplier.aadhaar_number.slice(-4)
+                    : "—",
+                },
               ].map(({ icon: Ic, label, value }) => (
                 <div key={label} className="flex items-start gap-3 bg-slate-50 rounded-xl p-3">
                   <Ic size={15} className="text-slate-400 mt-0.5 shrink-0" />
@@ -302,10 +347,22 @@ const AdminPage = () => {
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
   const [stats, setStats] = useState<Stats>({
-    totalUsers: 0, totalVendors: 0, totalSuppliers: 0,
-    totalOrders: 0, totalRevenue: 0, pendingVerifications: 0,
-    deliveredOrders: 0, pendingCOD: 0,
+    totalUsers: 0,
+    totalVendors: 0,
+    totalSuppliers: 0,
+    totalOrders: 0,
+    totalRevenue: 0,
+    marketplaceRevenue: 0,
+    bidRevenue: 0,
+    pendingVerifications: 0,
+    deliveredOrders: 0,
+    pendingCOD: 0,
+    totalBidOrders: 0,
+    pendingBidPayments: 0,
   });
+  const [bidOrders, setBidOrders] = useState<BidOrder[]>([]);
+  const [bidOrderSearch, setBidOrderSearch] = useState("");
+  const [bidOrderStatusFilter, setBidOrderStatusFilter] = useState("all");
 
   // supplier features
   const [supplierFilter, setSupplierFilter] = useState<SupplierFilter>("all");
@@ -324,19 +381,21 @@ const AdminPage = () => {
   const fetchDashboard = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const [statsRes, ordersRes, suppliersRes, weeklyRes] = await Promise.allSettled([
-        API.get("/admin/stats"),
-        API.get("/admin/orders"),
-        API.get("/admin/suppliers"),
-        API.get("/admin/weekly-revenue"),
-      ]);
+      const [statsRes, ordersRes, suppliersRes, weeklyRes, bidOrdersRes] =
+        await Promise.allSettled([
+          API.get("/admin/stats"),
+          API.get("/admin/orders"),
+          API.get("/admin/suppliers"),
+          API.get("/admin/weekly-revenue"),
+          API.get("/bid-orders/admin"),
+        ]);
 
-      // Core data — show error only if these fail
       if (statsRes.status === "fulfilled") setStats(statsRes.value.data.stats);
       if (ordersRes.status === "fulfilled") setRecentOrders(ordersRes.value.data.orders);
       if (suppliersRes.status === "fulfilled") setSuppliers(suppliersRes.value.data.suppliers);
+      if (bidOrdersRes.status === "fulfilled")
+        setBidOrders(bidOrdersRes.value.data.bidOrders ?? []);
 
-      // Chart data — optional, fail silently with empty array
       if (weeklyRes.status === "fulfilled") {
         setWeeklyRevenue(
           (weeklyRes.value.data.weeklyRevenue as any[]).map((r) => ({
@@ -347,7 +406,9 @@ const AdminPage = () => {
         );
       }
 
-      const coreFailed = [statsRes, ordersRes, suppliersRes].some(r => r.status === "rejected");
+      const coreFailed = [statsRes, ordersRes, suppliersRes].some(
+        (r) => r.status === "rejected"
+      );
       setError(coreFailed ? "Some dashboard data failed to load. Retrying…" : null);
       setLastRefreshed(new Date());
     } catch {
@@ -365,24 +426,36 @@ const AdminPage = () => {
   }, []);
 
   // ── supplier actions ──
-  const doSupplierAction = async (id: number, action: "approve" | "reject" | "suspend") => {
+  const doSupplierAction = async (
+    id: number,
+    action: "approve" | "reject" | "suspend"
+  ) => {
     if (action === "reject" && !confirm("Reject this supplier?")) return;
     if (action === "suspend" && !confirm("Suspend this supplier account?")) return;
     setActionLoading(id);
     try {
       const endpoint =
-        action === "approve" ? `/admin/suppliers/${id}/approve`
-        : action === "reject" ? `/admin/suppliers/${id}/reject`
-        : `/admin/suppliers/${id}/suspend`;
-      const method = action === "suspend" ? "patch" : "patch";
-      await API[method](endpoint);
-      const newStatus = action === "approve" ? "verified" : action === "reject" ? "rejected" : "suspended";
-      setSuppliers(prev => prev.map(s => s.id === id ? { ...s, verification_status: newStatus } : s));
-      if (selectedSupplier?.id === id) setSelectedSupplier(prev => prev ? { ...prev, verification_status: newStatus } : null);
+        action === "approve"
+          ? `/admin/suppliers/${id}/approve`
+          : action === "reject"
+          ? `/admin/suppliers/${id}/reject`
+          : `/admin/suppliers/${id}/suspend`;
+      await API.patch(endpoint);
+      const newStatus =
+        action === "approve" ? "verified" : action === "reject" ? "rejected" : "suspended";
+      setSuppliers((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, verification_status: newStatus } : s))
+      );
+      if (selectedSupplier?.id === id)
+        setSelectedSupplier((prev) =>
+          prev ? { ...prev, verification_status: newStatus } : null
+        );
       toast.success(
-        action === "approve" ? "Supplier approved ✓"
-        : action === "reject" ? "Supplier rejected"
-        : "Account suspended"
+        action === "approve"
+          ? "Supplier approved ✓"
+          : action === "reject"
+          ? "Supplier rejected"
+          : "Account suspended"
       );
     } catch {
       toast.error("Action failed. Please try again.");
@@ -393,27 +466,35 @@ const AdminPage = () => {
 
   // ── derived data ──
   const filteredSuppliers = useMemo(() => {
-    let list = supplierFilter === "all" ? suppliers : suppliers.filter(s => s.verification_status === supplierFilter);
+    let list =
+      supplierFilter === "all"
+        ? suppliers
+        : suppliers.filter((s) => s.verification_status === supplierFilter);
     if (supplierSearch.trim()) {
       const q = supplierSearch.toLowerCase();
-      list = list.filter(s =>
-        s.business_name.toLowerCase().includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        s.email.toLowerCase().includes(q) ||
-        (s.gst_number ?? "").toLowerCase().includes(q)
+      list = list.filter(
+        (s) =>
+          s.business_name.toLowerCase().includes(q) ||
+          s.name.toLowerCase().includes(q) ||
+          s.email.toLowerCase().includes(q) ||
+          (s.gst_number ?? "").toLowerCase().includes(q)
       );
     }
     return list;
   }, [suppliers, supplierFilter, supplierSearch]);
 
   const filteredOrders = useMemo(() => {
-    let list = orderStatusFilter === "all" ? recentOrders : recentOrders.filter(o => o.order_status === orderStatusFilter);
+    let list =
+      orderStatusFilter === "all"
+        ? recentOrders
+        : recentOrders.filter((o) => o.order_status === orderStatusFilter);
     if (orderSearch.trim()) {
       const q = orderSearch.toLowerCase();
-      list = list.filter(o =>
-        o.vendor_name?.toLowerCase().includes(q) ||
-        o.business_name?.toLowerCase().includes(q) ||
-        String(o.id).includes(q)
+      list = list.filter(
+        (o) =>
+          o.vendor_name?.toLowerCase().includes(q) ||
+          o.business_name?.toLowerCase().includes(q) ||
+          String(o.id).includes(q)
       );
     }
     return list;
@@ -424,16 +505,45 @@ const AdminPage = () => {
     { name: "Wholesalers", value: stats.totalSuppliers, color: "#8b5cf6" },
   ];
 
-  const ordersPieData = [
-    { name: "Delivered", value: stats.deliveredOrders, color: "#10b981" },
-    { name: "Other", value: stats.totalOrders - stats.deliveredOrders, color: "#e2e8f0" },
-  ];
+  const filteredBidOrders = useMemo(() => {
+    let list =
+      bidOrderStatusFilter === "all"
+        ? bidOrders
+        : bidOrders.filter((o) => o.order_status === bidOrderStatusFilter);
+    if (bidOrderSearch.trim()) {
+      const q = bidOrderSearch.toLowerCase();
+      list = list.filter(
+        (o) =>
+          o.vendor_name?.toLowerCase().includes(q) ||
+          o.wholesaler_name?.toLowerCase().includes(q) ||
+          o.product_name?.toLowerCase().includes(q) ||
+          String(o.id).includes(q)
+      );
+    }
+    return list;
+  }, [bidOrders, bidOrderStatusFilter, bidOrderSearch]);
 
   // ── nav items ──
-  const navItems: { id: NavTab; label: string; icon: React.ElementType; badge?: number }[] = [
-    { id: "overview",   label: "Overview",     icon: LayoutDashboard },
-    { id: "suppliers",  label: "Verification", icon: ShieldCheck, badge: stats.pendingVerifications },
-    { id: "orders",     label: "Orders",       icon: ClipboardList },
+  const navItems: {
+    id: NavTab;
+    label: string;
+    icon: React.ElementType;
+    badge?: number;
+  }[] = [
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    {
+      id: "suppliers",
+      label: "Verification",
+      icon: ShieldCheck,
+      badge: stats.pendingVerifications,
+    },
+    { id: "orders", label: "Orders", icon: ClipboardList },
+    {
+      id: "bids",
+      label: "Bid Orders",
+      icon: TrendingUp,
+      badge: stats.pendingBidPayments > 0 ? stats.pendingBidPayments : undefined,
+    },
   ];
 
   if (loading) {
@@ -455,7 +565,9 @@ const AdminPage = () => {
         {/* logo */}
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">SL</div>
+            <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+              SL
+            </div>
             <div>
               <p className="text-white font-bold text-sm leading-none">StreetLink</p>
               <p className="text-slate-400 text-xs mt-0.5">Admin Console</p>
@@ -489,14 +601,19 @@ const AdminPage = () => {
         {/* bottom */}
         <div className="p-4 border-t border-slate-800 space-y-2">
           <div className="flex items-center gap-2 px-3 py-2">
-            <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-bold">A</div>
+            <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+              A
+            </div>
             <div>
               <p className="text-white text-xs font-semibold">Admin</p>
               <p className="text-slate-500 text-xs">Super User</p>
             </div>
           </div>
           <button
-            onClick={async () => { await signOut(auth); navigate("/login"); }}
+            onClick={async () => {
+              await signOut(auth);
+              navigate("/login");
+            }}
             className="w-full flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl text-sm transition"
           >
             <LogOut size={14} />
@@ -511,7 +628,15 @@ const AdminPage = () => {
         {/* top bar */}
         <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-100 px-8 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold text-slate-800 capitalize">{activeTab === "overview" ? "Dashboard Overview" : activeTab === "suppliers" ? "Supplier Verification" : "Order Management"}</h1>
+            <h1 className="text-lg font-bold text-slate-800 capitalize">
+              {activeTab === "overview"
+                ? "Dashboard Overview"
+                : activeTab === "suppliers"
+                ? "Supplier Verification"
+                : activeTab === "bids"
+                ? "Bid Orders"
+                : "Order Management"}
+            </h1>
             <p className="text-xs text-slate-400 mt-0.5">
               Last updated {timeAgo(lastRefreshed.toISOString())}
             </p>
@@ -533,7 +658,12 @@ const AdminPage = () => {
             <div className="mb-6 flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
               <AlertTriangle size={16} />
               <span className="flex-1">{error}</span>
-              <button onClick={() => fetchDashboard()} className="underline text-xs font-semibold">Retry</button>
+              <button
+                onClick={() => fetchDashboard()}
+                className="underline text-xs font-semibold"
+              >
+                Retry
+              </button>
             </div>
           )}
 
@@ -543,14 +673,18 @@ const AdminPage = () => {
 
               {/* stat cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard label="Total Users"           value={stats.totalUsers}          icon={Users}         accent="bg-slate-700"   delay={0}    />
-                <StatCard label="Total Orders"          value={stats.totalOrders}         icon={ShoppingBag}   accent="bg-blue-500"    delay={0.05} />
-                <StatCard label="Total Revenue"         value={formatINR(Number(stats.totalRevenue))} icon={IndianRupee} accent="bg-emerald-500" delay={0.1} />
-                <StatCard label="Pending Verification"  value={stats.pendingVerifications} icon={Clock}         accent="bg-orange-500"  delay={0.15} />
-                <StatCard label="Vendors"               value={stats.totalVendors}        icon={Store}         accent="bg-sky-500"     delay={0.2}  />
-                <StatCard label="Wholesalers"           value={stats.totalSuppliers}      icon={Warehouse}     accent="bg-violet-500"  delay={0.25} />
-                <StatCard label="Delivered Orders"      value={stats.deliveredOrders}     icon={CheckCircle2}  accent="bg-teal-500"    delay={0.3}  />
-                <StatCard label="Pending COD"           value={stats.pendingCOD}          icon={Banknote}      accent="bg-amber-500"   delay={0.35} />
+                <StatCard label="Total Users"          value={stats.totalUsers}          icon={Users}         accent="bg-slate-700"   delay={0}    />
+                <StatCard label="Total Orders"         value={stats.totalOrders}         icon={ShoppingBag}   accent="bg-blue-500"    delay={0.05} />
+                <StatCard label="Total Revenue"        value={formatINR(Number(stats.totalRevenue))} icon={IndianRupee} accent="bg-emerald-500" delay={0.1} />
+                <StatCard label="Pending Verification" value={stats.pendingVerifications} icon={Clock}         accent="bg-orange-500"  delay={0.15} />
+                <StatCard label="Vendors"              value={stats.totalVendors}        icon={Store}         accent="bg-sky-500"     delay={0.2}  />
+                <StatCard label="Wholesalers"          value={stats.totalSuppliers}      icon={Warehouse}     accent="bg-violet-500"  delay={0.25} />
+                <StatCard label="Marketplace Revenue"  value={formatINR(Number(stats.marketplaceRevenue ?? 0))} icon={IndianRupee} accent="bg-teal-500" delay={0.3} />
+                <StatCard label="Bid Revenue"          value={formatINR(Number(stats.bidRevenue ?? 0))} icon={TrendingUp} accent="bg-violet-600" delay={0.32} />
+                <StatCard label="Delivered Orders"     value={stats.deliveredOrders}     icon={CheckCircle2}  accent="bg-teal-500"    delay={0.35} />
+                <StatCard label="Pending COD"          value={stats.pendingCOD}          icon={Banknote}      accent="bg-amber-500"   delay={0.4}  />
+                <StatCard label="Bid Orders"           value={stats.totalBidOrders ?? 0} icon={ShoppingBag}   accent="bg-indigo-500"  delay={0.45} />
+                <StatCard label="Pending Bid Payments" value={stats.pendingBidPayments ?? 0} icon={Clock}     accent="bg-rose-500"    delay={0.5}  />
               </div>
 
               {/* charts row */}
@@ -558,13 +692,15 @@ const AdminPage = () => {
 
                 {/* area chart */}
                 <motion.div
-                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
                   className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-6"
                 >
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h3 className="font-bold text-slate-800">Weekly Revenue</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Orders & revenue trend (sample)</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Orders & revenue trend</p>
                     </div>
                     <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-full">
                       <TrendingUp size={12} /> +12% this week
@@ -575,46 +711,88 @@ const AdminPage = () => {
                       No order data for the past 7 days
                     </div>
                   ) : (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <AreaChart data={weeklyRevenue} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f97316" stopOpacity={0.15} />
-                          <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
-                      <Tooltip
-                        contentStyle={{ border: "none", borderRadius: 12, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", fontSize: 12 }}
-                        formatter={(v: number) => [formatINR(v), "Revenue"]}
-                      />
-                      <Area type="monotone" dataKey="revenue" stroke="#f97316" strokeWidth={2} fill="url(#revGrad)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart
+                        data={weeklyRevenue}
+                        margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f97316" stopOpacity={0.15} />
+                            <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis
+                          dataKey="day"
+                          tick={{ fontSize: 11, fill: "#94a3b8" }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "#94a3b8" }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            border: "none",
+                            borderRadius: 12,
+                            boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+                            fontSize: 12,
+                          }}
+                          formatter={(v: number) => [formatINR(v), "Revenue"]}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="revenue"
+                          stroke="#f97316"
+                          strokeWidth={2}
+                          fill="url(#revGrad)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   )}
                 </motion.div>
 
                 {/* pie charts */}
                 <motion.div
-                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.45 }}
                   className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col gap-6"
                 >
                   <h3 className="font-bold text-slate-800">User Split</h3>
                   <div className="flex items-center justify-center">
                     <PieChart width={160} height={160}>
-                      <Pie data={pieData} cx={75} cy={75} innerRadius={48} outerRadius={70} paddingAngle={4} dataKey="value">
-                        {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      <Pie
+                        data={pieData}
+                        cx={75}
+                        cy={75}
+                        innerRadius={48}
+                        outerRadius={70}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
                       </Pie>
-                      <Tooltip formatter={(v: number, n: string) => [v, n]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      <Tooltip
+                        formatter={(v: number, n: string) => [v, n]}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      />
                     </PieChart>
                   </div>
                   <div className="space-y-2">
-                    {pieData.map(d => (
+                    {pieData.map((d) => (
                       <div key={d.name} className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.color }} />
+                          <div
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{ background: d.color }}
+                          />
                           <span className="text-slate-600">{d.name}</span>
                         </div>
                         <span className="font-semibold text-slate-800">{d.value}</span>
@@ -628,11 +806,22 @@ const AdminPage = () => {
                       <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-emerald-500 rounded-full transition-all duration-700"
-                          style={{ width: `${stats.totalOrders ? Math.round((stats.deliveredOrders / stats.totalOrders) * 100) : 0}%` }}
+                          style={{
+                            width: `${
+                              stats.totalOrders
+                                ? Math.round(
+                                    (stats.deliveredOrders / stats.totalOrders) * 100
+                                  )
+                                : 0
+                            }%`,
+                          }}
                         />
                       </div>
                       <span className="text-xs font-bold text-slate-700">
-                        {stats.totalOrders ? Math.round((stats.deliveredOrders / stats.totalOrders) * 100) : 0}%
+                        {stats.totalOrders
+                          ? Math.round((stats.deliveredOrders / stats.totalOrders) * 100)
+                          : 0}
+                        %
                       </span>
                     </div>
                   </div>
@@ -641,18 +830,59 @@ const AdminPage = () => {
 
               {/* quick actions */}
               <motion.div
-                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
                 className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6"
               >
                 <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
-                    { label: "Review Pending", sub: `${stats.pendingVerifications} awaiting`, icon: ShieldCheck, color: "bg-orange-50 text-orange-600 border-orange-100", onClick: () => { setActiveTab("suppliers"); setSupplierFilter("pending"); } },
-                    { label: "View Orders",    sub: `${stats.totalOrders} total`,            icon: ClipboardList, color: "bg-blue-50 text-blue-600 border-blue-100",   onClick: () => setActiveTab("orders") },
-                    { label: "COD Pending",    sub: `${stats.pendingCOD} uncleared`,         icon: Banknote,      color: "bg-amber-50 text-amber-600 border-amber-100", onClick: () => { setActiveTab("orders"); setOrderStatusFilter("placed"); } },
-                    { label: "Verified List",  sub: `${suppliers.filter(s => s.verification_status === "verified").length} approved`, icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600 border-emerald-100", onClick: () => { setActiveTab("suppliers"); setSupplierFilter("verified"); } },
+                    {
+                      label: "Review Pending",
+                      sub: `${stats.pendingVerifications} awaiting`,
+                      icon: ShieldCheck,
+                      color: "bg-orange-50 text-orange-600 border-orange-100",
+                      onClick: () => {
+                        setActiveTab("suppliers");
+                        setSupplierFilter("pending");
+                      },
+                    },
+                    {
+                      label: "View Orders",
+                      sub: `${stats.totalOrders} total`,
+                      icon: ClipboardList,
+                      color: "bg-blue-50 text-blue-600 border-blue-100",
+                      onClick: () => setActiveTab("orders"),
+                    },
+                    {
+                      label: "COD Pending",
+                      sub: `${stats.pendingCOD} uncleared`,
+                      icon: Banknote,
+                      color: "bg-amber-50 text-amber-600 border-amber-100",
+                      onClick: () => {
+                        setActiveTab("orders");
+                        setOrderStatusFilter("placed");
+                      },
+                    },
+                    {
+                      label: "Verified List",
+                      sub: `${
+                        suppliers.filter((s) => s.verification_status === "verified").length
+                      } approved`,
+                      icon: CheckCircle2,
+                      color: "bg-emerald-50 text-emerald-600 border-emerald-100",
+                      onClick: () => {
+                        setActiveTab("suppliers");
+                        setSupplierFilter("verified");
+                      },
+                    },
                   ].map(({ label, sub, icon: Ic, color, onClick }) => (
-                    <button key={label} onClick={onClick} className={`flex items-center gap-3 p-4 rounded-xl border ${color} hover:opacity-80 transition text-left`}>
+                    <button
+                      key={label}
+                      onClick={onClick}
+                      className={`flex items-center gap-3 p-4 rounded-xl border ${color} hover:opacity-80 transition text-left`}
+                    >
                       <Ic size={18} />
                       <div>
                         <p className="text-sm font-semibold">{label}</p>
@@ -673,26 +903,33 @@ const AdminPage = () => {
 
               {/* summary row */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {(["all", "pending", "verified", "rejected", "suspended"] as SupplierFilter[]).map(f => {
-                  const count = f === "all" ? suppliers.length : suppliers.filter(s => s.verification_status === f).length;
-                  const colors: Record<string, string> = {
-                    all: "border-slate-200 bg-white",
-                    pending: "border-amber-200 bg-amber-50",
-                    verified: "border-emerald-200 bg-emerald-50",
-                    rejected: "border-red-200 bg-red-50",
-                    suspended: "border-slate-200 bg-slate-50",
-                  };
-                  return (
-                    <button
-                      key={f}
-                      onClick={() => setSupplierFilter(f)}
-                      className={`border rounded-xl p-3 text-left transition ${colors[f]} ${supplierFilter === f ? "ring-2 ring-orange-400" : "hover:opacity-80"}`}
-                    >
-                      <p className="text-lg font-bold text-slate-800">{count}</p>
-                      <p className="text-xs text-slate-500 capitalize">{f}</p>
-                    </button>
-                  );
-                })}
+                {(["all", "pending", "verified", "rejected", "suspended"] as SupplierFilter[]).map(
+                  (f) => {
+                    const count =
+                      f === "all"
+                        ? suppliers.length
+                        : suppliers.filter((s) => s.verification_status === f).length;
+                    const colors: Record<string, string> = {
+                      all: "border-slate-200 bg-white",
+                      pending: "border-amber-200 bg-amber-50",
+                      verified: "border-emerald-200 bg-emerald-50",
+                      rejected: "border-red-200 bg-red-50",
+                      suspended: "border-slate-200 bg-slate-50",
+                    };
+                    return (
+                      <button
+                        key={f}
+                        onClick={() => setSupplierFilter(f)}
+                        className={`border rounded-xl p-3 text-left transition ${colors[f]} ${
+                          supplierFilter === f ? "ring-2 ring-orange-400" : "hover:opacity-80"
+                        }`}
+                      >
+                        <p className="text-lg font-bold text-slate-800">{count}</p>
+                        <p className="text-xs text-slate-500 capitalize">{f}</p>
+                      </button>
+                    );
+                  }
+                )}
               </div>
 
               {/* search */}
@@ -702,7 +939,7 @@ const AdminPage = () => {
                   type="text"
                   placeholder="Search by name, email, business or GST…"
                   value={supplierSearch}
-                  onChange={e => setSupplierSearch(e.target.value)}
+                  onChange={(e) => setSupplierSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent shadow-sm"
                 />
               </div>
@@ -711,7 +948,11 @@ const AdminPage = () => {
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                   <h3 className="font-bold text-slate-800">
-                    {supplierFilter === "all" ? "All Suppliers" : `${supplierFilter.charAt(0).toUpperCase() + supplierFilter.slice(1)} Suppliers`}
+                    {supplierFilter === "all"
+                      ? "All Suppliers"
+                      : `${
+                          supplierFilter.charAt(0).toUpperCase() + supplierFilter.slice(1)
+                        } Suppliers`}
                   </h3>
                   <span className="text-xs text-slate-400">{filteredSuppliers.length} results</span>
                 </div>
@@ -732,14 +973,22 @@ const AdminPage = () => {
                     <tbody className="divide-y divide-slate-50">
                       {filteredSuppliers.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-12 text-center text-slate-400 text-sm">
+                          <td
+                            colSpan={7}
+                            className="px-6 py-12 text-center text-slate-400 text-sm"
+                          >
                             No suppliers match your filter
                           </td>
                         </tr>
                       )}
-                      {filteredSuppliers.map(supplier => (
-                        <tr key={supplier.id} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="px-6 py-3.5 font-medium text-slate-800">{supplier.business_name}</td>
+                      {filteredSuppliers.map((supplier) => (
+                        <tr
+                          key={supplier.id}
+                          className="hover:bg-slate-50/60 transition-colors"
+                        >
+                          <td className="px-6 py-3.5 font-medium text-slate-800">
+                            {supplier.business_name}
+                          </td>
                           <td className="px-6 py-3.5 text-slate-600">{supplier.name}</td>
                           <td className="px-6 py-3.5 text-slate-500">{supplier.email}</td>
                           <td className="px-6 py-3.5">
@@ -748,12 +997,19 @@ const AdminPage = () => {
                             </span>
                           </td>
                           <td className="px-6 py-3.5">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusColor[supplier.verification_status] ?? "bg-gray-100 text-gray-600"}`}>
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                statusColor[supplier.verification_status] ??
+                                "bg-gray-100 text-gray-600"
+                              }`}
+                            >
                               {supplier.verification_status}
                             </span>
                           </td>
                           <td className="px-6 py-3.5 text-slate-400 text-xs">
-                            {supplier.created_at ? new Date(supplier.created_at).toLocaleDateString("en-IN") : "—"}
+                            {supplier.created_at
+                              ? new Date(supplier.created_at).toLocaleDateString("en-IN")
+                              : "—"}
                           </td>
                           <td className="px-6 py-3.5">
                             <div className="flex items-center gap-1.5">
@@ -812,7 +1068,7 @@ const AdminPage = () => {
               {/* order status filter bar */}
               <div className="flex flex-wrap items-center gap-2">
                 <Filter size={14} className="text-slate-400" />
-                {["all", "placed", "accepted", "delivered", "cancelled"].map(f => (
+                {["all", "placed", "accepted", "delivered", "cancelled"].map((f) => (
                   <button
                     key={f}
                     onClick={() => setOrderStatusFilter(f)}
@@ -825,7 +1081,7 @@ const AdminPage = () => {
                     {f.charAt(0).toUpperCase() + f.slice(1)}
                     {f !== "all" && (
                       <span className="ml-1.5 opacity-60">
-                        {recentOrders.filter(o => o.order_status === f).length}
+                        {recentOrders.filter((o) => o.order_status === f).length}
                       </span>
                     )}
                   </button>
@@ -839,7 +1095,7 @@ const AdminPage = () => {
                   type="text"
                   placeholder="Search by order ID, vendor or wholesaler…"
                   value={orderSearch}
-                  onChange={e => setOrderSearch(e.target.value)}
+                  onChange={(e) => setOrderSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent shadow-sm"
                 />
               </div>
@@ -866,42 +1122,62 @@ const AdminPage = () => {
                     <tbody className="divide-y divide-slate-50">
                       {filteredOrders.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-12 text-center text-slate-400 text-sm">
+                          <td
+                            colSpan={7}
+                            className="px-6 py-12 text-center text-slate-400 text-sm"
+                          >
                             No orders match your filter
                           </td>
                         </tr>
                       )}
-                      {filteredOrders.map(order => (
+                      {filteredOrders.map((order) => (
                         <tr key={order.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="px-6 py-3.5">
                             <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded font-semibold text-slate-600">
                               #{order.id}
                             </span>
                           </td>
-                          <td className="px-6 py-3.5 font-medium text-slate-700">{order.vendor_name}</td>
+                          <td className="px-6 py-3.5 font-medium text-slate-700">
+                            {order.vendor_name}
+                          </td>
                           <td className="px-6 py-3.5 text-slate-600">{order.business_name}</td>
                           <td className="px-6 py-3.5 text-right font-semibold text-slate-800">
                             {formatINR(Number(order.total_amount))}
                           </td>
                           <td className="px-6 py-3.5">
                             <div className="flex items-center gap-1.5">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusColor[order.payment_method] ?? "bg-gray-100 text-gray-600"}`}>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                  statusColor[order.payment_method] ?? "bg-gray-100 text-gray-600"
+                                }`}
+                              >
                                 {order.payment_method?.toUpperCase()}
                               </span>
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusColor[order.payment_status] ?? "bg-gray-100 text-gray-600"}`}>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                  statusColor[order.payment_status] ?? "bg-gray-100 text-gray-600"
+                                }`}
+                              >
                                 {order.payment_status}
                               </span>
                             </div>
                           </td>
                           <td className="px-6 py-3.5">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusColor[order.order_status] ?? "bg-gray-100 text-gray-600"}`}>
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                statusColor[order.order_status] ?? "bg-gray-100 text-gray-600"
+                              }`}
+                            >
                               {order.order_status}
                             </span>
                           </td>
-                          <td className="px-6 py-3.5 text-slate-400 text-xs">
-                            <div className="flex items-center gap-1">
-                              <Calendar size={11} />
-                              {timeAgo(order.created_at)}
+                          <td className="px-6 py-3.5 text-slate-500 text-xs">
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1 font-medium">
+                                <Calendar size={11} />
+                                {formatExactDate(order.created_at)}
+                              </div>
+                              <span className="text-slate-400">{timeAgo(order.created_at)}</span>
                             </div>
                           </td>
                         </tr>
@@ -912,6 +1188,202 @@ const AdminPage = () => {
               </div>
             </motion.div>
           )}
+
+          {/* ─────────────── BID ORDERS TAB ─────────────── */}
+          {activeTab === "bids" && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+
+              {/* status filter */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Filter size={14} className="text-slate-400" />
+                {["all", "confirmed", "shipped", "delivered", "cancelled"].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setBidOrderStatusFilter(f)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
+                      bidOrderStatusFilter === f
+                        ? "bg-slate-900 text-white"
+                        : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {f !== "all" && (
+                      <span className="ml-1.5 opacity-60">
+                        {bidOrders.filter((o) => o.order_status === f).length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setBidOrderStatusFilter("pending_payment")}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
+                    bidOrderStatusFilter === "pending_payment"
+                      ? "bg-rose-600 text-white"
+                      : "bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100"
+                  }`}
+                >
+                  Pending Payment
+                  <span className="ml-1.5 opacity-80">
+                    {
+                      bidOrders.filter(
+                        (o) => o.payment_status === "pending" && o.order_status !== "cancelled"
+                      ).length
+                    }
+                  </span>
+                </button>
+              </div>
+
+              {/* search */}
+              <div className="relative">
+                <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by vendor, wholesaler, product or ID…"
+                  value={bidOrderSearch}
+                  onChange={(e) => setBidOrderSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent shadow-sm"
+                />
+              </div>
+
+              {/* revenue summary */}
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  {
+                    label: "Total Bid Revenue",
+                    value: formatINR(
+                      bidOrders.reduce((s, o) => s + Number(o.total_amount), 0)
+                    ),
+                    color: "text-slate-800",
+                  },
+                  {
+                    label: "Paid",
+                    value: formatINR(
+                      bidOrders
+                        .filter((o) => o.payment_status === "paid")
+                        .reduce((s, o) => s + Number(o.total_amount), 0)
+                    ),
+                    color: "text-emerald-700",
+                  },
+                  {
+                    label: "Pending Payment",
+                    value: formatINR(
+                      bidOrders
+                        .filter(
+                          (o) =>
+                            o.payment_status === "pending" && o.order_status !== "cancelled"
+                        )
+                        .reduce((s, o) => s + Number(o.total_amount), 0)
+                    ),
+                    color: "text-rose-600",
+                  },
+                ].map(({ label, value, color }) => (
+                  <div
+                    key={label}
+                    className="bg-white rounded-xl border border-slate-100 shadow-sm p-4"
+                  >
+                    <p className="text-xs text-slate-500 mb-1">{label}</p>
+                    <p className={`text-xl font-bold ${color}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* bid orders table */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <h3 className="font-bold text-slate-800">Bid / Negotiation Orders</h3>
+                  <span className="text-xs text-slate-400">{filteredBidOrders.length} orders</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                        <th className="px-6 py-3 text-left">ID</th>
+                        <th className="px-6 py-3 text-left">Product</th>
+                        <th className="px-6 py-3 text-left">Vendor</th>
+                        <th className="px-6 py-3 text-left">Wholesaler</th>
+                        <th className="px-6 py-3 text-right">Qty</th>
+                        <th className="px-6 py-3 text-right">Amount</th>
+                        <th className="px-6 py-3 text-left">Payment</th>
+                        <th className="px-6 py-3 text-left">Status</th>
+                        <th className="px-6 py-3 text-left">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {filteredBidOrders.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={9}
+                            className="px-6 py-12 text-center text-slate-400 text-sm"
+                          >
+                            No bid orders match your filter
+                          </td>
+                        </tr>
+                      )}
+                      {(bidOrderStatusFilter === "pending_payment"
+                        ? bidOrders.filter(
+                            (o) =>
+                              o.payment_status === "pending" && o.order_status !== "cancelled"
+                          )
+                        : filteredBidOrders
+                      ).map((order) => (
+                        <tr key={order.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="px-6 py-3.5">
+                            <span className="font-mono text-xs bg-indigo-50 px-2 py-1 rounded font-semibold text-indigo-600">
+                              #{order.id}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 font-medium text-slate-700 max-w-[140px] truncate">
+                            {order.product_name}
+                          </td>
+                          <td className="px-6 py-3.5 text-slate-600">{order.vendor_name}</td>
+                          <td className="px-6 py-3.5 text-slate-500">{order.wholesaler_name}</td>
+                          <td className="px-6 py-3.5 text-right text-slate-600">
+                            {order.quantity}
+                          </td>
+                          <td className="px-6 py-3.5 text-right font-semibold text-slate-800">
+                            {formatINR(Number(order.total_amount))}
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                statusColor[order.payment_status] ?? "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {order.payment_status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                statusColor[order.order_status] ?? "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {order.order_status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-slate-500 text-xs">
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1 font-medium">
+                                <Calendar size={11} />
+                                {formatExactDate(order.created_at)}
+                              </div>
+                              <span className="text-slate-400">{timeAgo(order.created_at)}</span>
+                              {order.paid_at && (
+                                <span className="text-emerald-600">
+                                  Paid: {formatExactDate(order.paid_at)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
         </div>
       </main>
 
@@ -920,9 +1392,9 @@ const AdminPage = () => {
         <SupplierDrawer
           supplier={selectedSupplier}
           onClose={() => setSelectedSupplier(null)}
-          onApprove={id => doSupplierAction(id, "approve")}
-          onReject={id => doSupplierAction(id, "reject")}
-          onSuspend={id => doSupplierAction(id, "suspend")}
+          onApprove={(id) => doSupplierAction(id, "approve")}
+          onReject={(id) => doSupplierAction(id, "reject")}
+          onSuspend={(id) => doSupplierAction(id, "suspend")}
           actionLoading={actionLoading}
         />
       )}

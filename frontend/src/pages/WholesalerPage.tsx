@@ -68,9 +68,16 @@ const WholesalerPage = () => {
     totalOrders: 0,
     deliveredOrders: 0,
     pendingOrders: 0,
-    totalRevenue: 0,
+    totalRevenue: 0,         // marketplace + bid combined
+    marketplaceRevenue: 0,
+    bidRevenue: 0,
     totalProducts: 0,
+    totalBidOrders: 0,
+    pendingBidPayments: 0,
   });
+
+  // Bid orders from MySQL (synced after Firestore acceptance)
+  const [mysqlBidOrders, setMysqlBidOrders] = useState<any[]>([]);
 
   // Video call states
   const [showVideoCall, setShowVideoCall] = useState(false);
@@ -219,6 +226,23 @@ const WholesalerPage = () => {
       });
 
       setBidRequests((prev) => prev.filter((req) => req.id !== bidRequest.id));
+
+      // Sync bid order to MySQL for revenue tracking
+      try {
+        await API.post("/bid-orders/sync", {
+          firestore_bid_id: bidRequest.id,
+          firestore_order_id: null,
+          vendor_firebase_uid: bidRequest.vendorId,
+          supplier_firebase_uid: user.uid,
+          product_name: bidRequest.productName,
+          quantity: bidRequest.quantity,
+          price_per_unit: bidRequest.bidPrice,
+          total_amount: bidRequest.bidPrice * bidRequest.quantity,
+        });
+        fetchMysqlBidOrders();
+      } catch (syncErr) {
+        console.log("BID ORDER SYNC ERROR (non-critical):", syncErr);
+      }
       fetchOrders();
 
       await createNotification({
@@ -328,6 +352,10 @@ const WholesalerPage = () => {
 
       const orders = response.data.orders || [];
 
+      const marketplaceRevenue = orders
+        .filter((o) => o.payment_status === "paid")
+        .reduce((sum, order) => sum + Number(order.total_amount), 0);
+
       setStats((prev) => ({
         ...prev,
 
@@ -340,12 +368,52 @@ const WholesalerPage = () => {
           (o) => o.order_status === "placed" || o.order_status === "accepted",
         ).length,
 
-        totalRevenue: orders
-          .filter((o) => o.order_status === "delivered")
-          .reduce((sum, order) => sum + Number(order.total_amount), 0),
+        marketplaceRevenue,
+
+        // totalRevenue will be recalculated once bid orders are also loaded
+        totalRevenue: marketplaceRevenue + (prev.bidRevenue ?? 0),
       }));
     } catch (error) {
       console.log("FETCH MYSQL SUPPLIER ORDERS ERROR:", error);
+    }
+  };
+
+  // Fetch bid orders from MySQL and recalculate combined revenue
+  const fetchMysqlBidOrders = async () => {
+    try {
+      const response = await API.get("/bid-orders/supplier");
+      const bidOrders = response.data.bidOrders || [];
+      setMysqlBidOrders(bidOrders);
+
+      const bidRevenue = bidOrders
+        .filter((o: any) => o.payment_status === "paid")
+        .reduce((sum: number, o: any) => sum + Number(o.total_amount), 0);
+
+      const pendingBidPayments = bidOrders.filter(
+        (o: any) => o.payment_status === "pending" && o.order_status !== "cancelled"
+      ).length;
+
+      setStats((prev) => ({
+        ...prev,
+        bidRevenue,
+        pendingBidPayments,
+        totalBidOrders: bidOrders.length,
+        totalRevenue: (prev.marketplaceRevenue ?? 0) + bidRevenue,
+      }));
+    } catch (error) {
+      console.log("FETCH MYSQL BID ORDERS ERROR:", error);
+    }
+  };
+
+  // Mark a bid order payment as received
+  const markBidOrderPaid = async (firestoreBidId: string) => {
+    try {
+      await API.patch(`/bid-orders/${firestoreBidId}/pay`);
+      await fetchMysqlBidOrders();
+      toast({ title: "Payment Received", description: "Bid order payment marked as paid." });
+    } catch (error) {
+      console.log("BID PAYMENT UPDATE ERROR:", error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to update bid payment." });
     }
   };
 
@@ -630,6 +698,7 @@ const WholesalerPage = () => {
 
         fetchOrders();
         fetchMysqlOrders();
+        fetchMysqlBidOrders();
       } catch (error: any) {
         console.log("SUPPLIER PROFILE ERROR:", error);
 
@@ -668,6 +737,7 @@ const WholesalerPage = () => {
         fetchOrders();
 
         fetchMysqlOrders();
+        fetchMysqlBidOrders();
       }, 10000);
 
       return () => {
@@ -1160,48 +1230,35 @@ const WholesalerPage = () => {
             </h2>
           </div>
 
-          <div
-            className="
-      bg-white
-      border
-      rounded-xl
-      p-6
-    "
-          >
-            <p className="text-gray-500 text-sm">Total Revenue</p>
-
-            <div
-              className="
-  bg-white
-  border
-  rounded-xl
-  p-6
-"
-            >
-              <p className="text-gray-500 text-sm">Total Products</p>
-
-              <h2
-                className="
-    text-3xl
-    font-bold
-    text-purple-600
-    mt-2
-  "
-              >
-                {stats.totalProducts}
-              </h2>
-            </div>
-
-            <h2
-              className="
-        text-3xl
-        font-bold
-        text-blue-600
-        mt-2
-      "
-            >
-              ₹{stats.totalRevenue}
+          <div className="bg-white border rounded-xl p-6">
+            <p className="text-gray-500 text-sm">Total Products</p>
+            <h2 className="text-3xl font-bold text-purple-600 mt-2">
+              {stats.totalProducts}
             </h2>
+          </div>
+
+          {/* Revenue breakdown card */}
+          <div className="bg-white border rounded-xl p-6 col-span-2">
+            <p className="text-gray-500 text-sm mb-3">Total Revenue (Paid)</p>
+            <h2 className="text-3xl font-bold text-blue-600 mb-3">
+              ₹{stats.totalRevenue.toLocaleString("en-IN")}
+            </h2>
+            <div className="flex gap-4 flex-wrap">
+              <div className="bg-blue-50 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-500">Marketplace</p>
+                <p className="font-bold text-blue-700">₹{(stats.marketplaceRevenue ?? 0).toLocaleString("en-IN")}</p>
+              </div>
+              <div className="bg-violet-50 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-500">Bid Orders</p>
+                <p className="font-bold text-violet-700">₹{(stats.bidRevenue ?? 0).toLocaleString("en-IN")}</p>
+              </div>
+              {(stats.pendingBidPayments ?? 0) > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <p className="text-xs text-amber-600">Pending Bid Payments</p>
+                  <p className="font-bold text-amber-700">{stats.pendingBidPayments} order{stats.pendingBidPayments > 1 ? "s" : ""}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1231,12 +1288,22 @@ const WholesalerPage = () => {
     gap-4
   "
           >
-            <Button onClick={() => setShowIncomingOrders(true)}>
-              View Marketplace Orders
+            <Button onClick={() => setShowIncomingOrders(true)} className="relative">
+              View All Orders
+              {(stats.pendingBidPayments ?? 0) > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  {stats.pendingBidPayments}
+                </span>
+              )}
             </Button>
 
             <Button variant="outline" onClick={() => setShowBidRequests(true)}>
               View Negotiations
+              {bidRequests.filter(b => b.status === "pending" && !b.counterOffer).length > 0 && (
+                <span className="ml-2 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                  {bidRequests.filter(b => b.status === "pending" && !b.counterOffer).length}
+                </span>
+              )}
             </Button>
 
             <Button variant="secondary" onClick={() => setShowOrders(true)}>
@@ -1382,8 +1449,10 @@ const WholesalerPage = () => {
         isOpen={showIncomingOrders}
         onClose={() => setShowIncomingOrders(false)}
         orders={mysqlOrders}
+        bidOrders={mysqlBidOrders}
         updateMysqlOrderStatus={updateMysqlOrderStatus}
         markPaymentReceived={markPaymentReceived}
+        markBidOrderPaid={markBidOrderPaid}
       />
       <Footer />
 
