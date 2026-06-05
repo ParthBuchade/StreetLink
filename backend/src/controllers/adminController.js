@@ -100,6 +100,9 @@ const getAdminStats = async (req, res) => {
       [pending],
       [delivered],
       [pendingCOD],
+      [bidOrdersCount],
+      [bidRevenue],
+      [pendingBidPayments],
     ] = await Promise.all([
       db.query(`SELECT COUNT(*) AS totalUsers FROM users`),
       db.query(
@@ -128,7 +131,25 @@ const getAdminStats = async (req, res) => {
         WHERE payment_method = 'cod'
           AND payment_status = 'pending'
       `),
+      // Bid orders total count
+      db.query(`SELECT COUNT(*) AS totalBidOrders FROM bid_orders`),
+      // Bid orders revenue (paid only)
+      db.query(`
+        SELECT IFNULL(SUM(total_amount), 0) AS bidRevenue
+        FROM bid_orders
+        WHERE payment_status = 'paid'
+      `),
+      // Pending bid payments
+      db.query(`
+        SELECT COUNT(*) AS pendingBidPayments
+        FROM bid_orders
+        WHERE payment_status = 'pending'
+          AND order_status != 'cancelled'
+      `),
     ]);
+
+    const marketplaceRevenue = Number(revenue[0].totalRevenue);
+    const bidRevenueAmt = Number(bidRevenue[0].bidRevenue);
 
     return res.json({
       success: true,
@@ -137,10 +158,14 @@ const getAdminStats = async (req, res) => {
         totalVendors: vendors[0].totalVendors,
         totalSuppliers: suppliers[0].totalSuppliers,
         totalOrders: orders[0].totalOrders,
-        totalRevenue: revenue[0].totalRevenue,
+        totalRevenue: marketplaceRevenue + bidRevenueAmt, // combined
+        marketplaceRevenue,
+        bidRevenue: bidRevenueAmt,
         pendingVerifications: pending[0].pendingVerifications,
         deliveredOrders: delivered[0].deliveredOrders,
         pendingCOD: pendingCOD[0].pendingCOD,
+        totalBidOrders: bidOrdersCount[0].totalBidOrders,
+        pendingBidPayments: pendingBidPayments[0].pendingBidPayments,
       },
     });
   } catch (error) {
