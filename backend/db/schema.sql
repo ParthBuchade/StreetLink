@@ -244,3 +244,26 @@ CREATE TABLE `verification_documents` (
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-05-30 14:07:54
+
+CREATE TABLE IF NOT EXISTS `bid_orders` (
+  `id`                int          NOT NULL AUTO_INCREMENT,
+  `firestore_bid_id`  varchar(255) NOT NULL COMMENT 'Firestore bidRequests doc id',
+  `firestore_order_id` varchar(255) DEFAULT NULL COMMENT 'Firestore orders doc id',
+  `vendor_id`         int          NOT NULL,
+  `supplier_id`       int          NOT NULL,
+  `product_name`      varchar(255) NOT NULL,
+  `quantity`          int          NOT NULL,
+  `price_per_unit`    decimal(10,2) NOT NULL,
+  `total_amount`      decimal(10,2) NOT NULL,
+  `payment_status`    enum('pending','paid') DEFAULT 'pending',
+  `paid_at`           datetime     DEFAULT NULL,
+  `order_status`      enum('confirmed','shipped','delivered','cancelled') DEFAULT 'confirmed',
+  `delivered_at`      datetime     DEFAULT NULL,
+  `created_at`        timestamp    NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `firestore_bid_id` (`firestore_bid_id`),
+  KEY `vendor_id`   (`vendor_id`),
+  KEY `supplier_id` (`supplier_id`),
+  CONSTRAINT `bid_orders_ibfk_1` FOREIGN KEY (`vendor_id`)   REFERENCES `users`     (`id`) ON DELETE CASCADE,
+  CONSTRAINT `bid_orders_ibfk_2` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
