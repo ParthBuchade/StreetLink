@@ -66,7 +66,7 @@ const rejectSupplier = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// SUSPEND SUPPLIER  ← NEW
+// SUSPEND SUPPLIER
 // PATCH /api/admin/suppliers/:id/suspend
 // ─────────────────────────────────────────────────────────────
 const suspendSupplier = async (req, res) => {
@@ -86,8 +86,9 @@ const suspendSupplier = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// GET ADMIN STATS — all 8 queries run in PARALLEL  ← IMPROVED
+// GET ADMIN STATS
 // GET /api/admin/stats
+// All queries run in parallel. Revenue = marketplace paid + bid paid.
 // ─────────────────────────────────────────────────────────────
 const getAdminStats = async (req, res) => {
   try {
@@ -129,22 +130,19 @@ const getAdminStats = async (req, res) => {
         SELECT COUNT(*) AS pendingCOD
         FROM orders
         WHERE payment_method = 'cod'
-          AND payment_status = 'pending'
+          AND payment_status  = 'pending'
       `),
-      // Bid orders total count
       db.query(`SELECT COUNT(*) AS totalBidOrders FROM bid_orders`),
-      // Bid orders revenue (paid only)
       db.query(`
         SELECT IFNULL(SUM(total_amount), 0) AS bidRevenue
         FROM bid_orders
         WHERE payment_status = 'paid'
       `),
-      // Pending bid payments
       db.query(`
         SELECT COUNT(*) AS pendingBidPayments
         FROM bid_orders
         WHERE payment_status = 'pending'
-          AND order_status != 'cancelled'
+          AND order_status   != 'cancelled'
       `),
     ]);
 
@@ -177,7 +175,7 @@ const getAdminStats = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// GET RECENT ORDERS — removed LIMIT 10, added index hint  ← IMPROVED
+// GET RECENT ORDERS (marketplace only)
 // GET /api/admin/orders
 // ─────────────────────────────────────────────────────────────
 const getRecentOrders = async (req, res) => {
@@ -190,10 +188,10 @@ const getRecentOrders = async (req, res) => {
         o.payment_status,
         o.order_status,
         o.created_at,
-        vendor.name    AS vendor_name,
+        vendor.name           AS vendor_name,
         supplier.business_name
       FROM orders o
-      JOIN users vendor     ON o.customer_id = vendor.id
+      JOIN users     vendor   ON o.customer_id = vendor.id
       JOIN suppliers supplier ON o.supplier_id = supplier.id
       ORDER BY o.created_at DESC
       LIMIT 50
@@ -209,22 +207,46 @@ const getRecentOrders = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// GET WEEKLY REVENUE — for the area chart  ← NEW
+// GET WEEKLY REVENUE — for the area chart
 // GET /api/admin/weekly-revenue
-// Returns last 7 days of orders grouped by day
+// Returns last 7 days with COMBINED revenue (marketplace + bid orders).
+// Uses a UNION so both tables contribute to the same day bucket.
 // ─────────────────────────────────────────────────────────────
 const getWeeklyRevenue = async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT
-        DATE(created_at)                AS day,
-        DAYNAME(created_at)             AS day_name,
-        COUNT(*)                        AS orders,
-        IFNULL(SUM(total_amount), 0)    AS revenue
-      FROM orders
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 DAY)
-      GROUP BY DATE(created_at), DAYNAME(created_at)
-      ORDER BY DATE(created_at) ASC
+        day,
+        day_name,
+        SUM(orders)  AS orders,
+        SUM(revenue) AS revenue
+      FROM (
+        -- Marketplace orders
+        SELECT
+          DATE(created_at)             AS day,
+          DAYNAME(created_at)          AS day_name,
+          COUNT(*)                     AS orders,
+          IFNULL(SUM(total_amount), 0) AS revenue
+        FROM orders
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+          AND payment_status = 'paid'
+        GROUP BY DATE(created_at), DAYNAME(created_at)
+
+        UNION ALL
+
+        -- Bid / negotiation orders
+        SELECT
+          DATE(created_at)             AS day,
+          DAYNAME(created_at)          AS day_name,
+          COUNT(*)                     AS orders,
+          IFNULL(SUM(total_amount), 0) AS revenue
+        FROM bid_orders
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+          AND payment_status = 'paid'
+        GROUP BY DATE(created_at), DAYNAME(created_at)
+      ) combined
+      GROUP BY day, day_name
+      ORDER BY day ASC
     `);
 
     return res.json({ success: true, weeklyRevenue: rows });
@@ -243,8 +265,8 @@ module.exports = {
   getAllSuppliers,
   approveSupplier,
   rejectSupplier,
-  suspendSupplier, // ← new
+  suspendSupplier,
   getAdminStats,
   getRecentOrders,
-  getWeeklyRevenue, // ← new
+  getWeeklyRevenue,
 };

@@ -1,6 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { X, IndianRupee, PackageCheck, Clock } from "lucide-react";
+import { X, IndianRupee, PackageCheck, Clock, Truck } from "lucide-react";
+import API from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   isOpen: boolean;
@@ -10,6 +12,7 @@ interface Props {
   updateMysqlOrderStatus: (id: number, status: string) => void;
   markPaymentReceived: (id: number) => void;
   markBidOrderPaid?: (firestoreBidId: string) => void;
+  onBidOrderStatusUpdate?: () => void; // optional refresh callback
 }
 
 const formatDate = (date: string) => {
@@ -20,7 +23,7 @@ const formatDate = (date: string) => {
   });
 };
 
-const PaymentBadge = ({ status }: { status: string }) => (
+const PaymentBadge = ({ status, method }: { status: string; method?: string }) => (
   <span
     className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 ${
       status === "paid"
@@ -29,7 +32,9 @@ const PaymentBadge = ({ status }: { status: string }) => (
     }`}
   >
     <IndianRupee size={10} />
-    {status === "paid" ? "Paid" : "Payment Pending"}
+    {status === "paid"
+      ? `Paid${method === "online" ? " (Online)" : " (COD)"}`
+      : "Payment Pending"}
   </span>
 );
 
@@ -57,12 +62,27 @@ const IncomingOrdersModal = ({
   updateMysqlOrderStatus,
   markPaymentReceived,
   markBidOrderPaid,
+  onBidOrderStatusUpdate,
 }: Props) => {
+  const { toast } = useToast();
+
   if (!isOpen) return null;
 
   const pendingBidPayments = bidOrders.filter(
     (o) => o.payment_status === "pending" && o.order_status !== "cancelled"
   );
+
+  // Update bid order status (shipped / delivered / cancelled)
+  const handleBidOrderStatus = async (firestoreBidId: string, status: string) => {
+    try {
+      await API.patch(`/bid-orders/${firestoreBidId}/status`, { status });
+      toast({ title: "Bid Order Updated", description: `Status changed to ${status}` });
+      if (onBidOrderStatusUpdate) onBidOrderStatusUpdate();
+    } catch (err) {
+      console.error("BID STATUS UPDATE ERROR:", err);
+      toast({ variant: "destructive", title: "Error", description: "Failed to update bid order status." });
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -106,7 +126,7 @@ const IncomingOrdersModal = ({
                         </div>
                         <div className="flex gap-2 flex-wrap justify-end">
                           <StatusBadge status={order.order_status} />
-                          <PaymentBadge status={order.payment_status} />
+                          <PaymentBadge status={order.payment_status} method={order.payment_method} />
                         </div>
                       </div>
 
@@ -139,7 +159,6 @@ const IncomingOrdersModal = ({
                         <p className="text-xs text-emerald-600 mb-2">💳 Paid: {formatDate(order.paid_at)}</p>
                       )}
 
-                      {/* Order action buttons */}
                       <div className="flex gap-2 flex-wrap mt-2">
                         {order.order_status === "placed" && (
                           <>
@@ -195,8 +214,8 @@ const IncomingOrdersModal = ({
                   <Card
                     key={order.id}
                     className={`border-l-4 ${
-                      order.payment_status === "paid" ? "border-l-emerald-500" :
-                      order.order_status === "cancelled" ? "border-l-gray-300" :
+                      order.payment_status === "paid"   ? "border-l-emerald-500" :
+                      order.order_status  === "cancelled" ? "border-l-gray-300"   :
                       "border-l-amber-400"
                     }`}
                   >
@@ -209,7 +228,7 @@ const IncomingOrdersModal = ({
                         </div>
                         <div className="flex gap-2 flex-wrap justify-end">
                           <StatusBadge status={order.order_status} />
-                          <PaymentBadge status={order.payment_status} />
+                          <PaymentBadge status={order.payment_status} method={order.payment_method} />
                         </div>
                       </div>
 
@@ -223,40 +242,98 @@ const IncomingOrdersModal = ({
                         )}
                       </div>
 
-                      {/* Payment warning for pending bid orders */}
-                      {order.payment_status === "pending" && order.order_status !== "cancelled" && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-start gap-2">
-                          <Clock size={14} className="text-amber-600 mt-0.5 shrink-0" />
-                          <div>
-                            <p className="text-sm font-semibold text-amber-700">Payment Pending</p>
-                            <p className="text-xs text-amber-600 mt-0.5">
-                              Vendor has placed this bid order but payment has not been received yet.
-                              Once they pay (online or in-person), mark it as received below.
-                            </p>
+                      {/* Payment pending warning (only for COD — online payment vendor does themselves) */}
+                      {order.payment_status === "pending" &&
+                        order.order_status   !== "cancelled" &&
+                        order.payment_method !== "online" && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-start gap-2">
+                            <Clock size={14} className="text-amber-600 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-amber-700">COD Payment Pending</p>
+                              <p className="text-xs text-amber-600 mt-0.5">
+                                Vendor will pay cash on delivery. Once received, mark it below.
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+
+                      {/* Online payment already done by vendor */}
+                      {order.payment_status === "pending" &&
+                        order.payment_method === "online" &&
+                        order.order_status !== "cancelled" && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 flex items-start gap-2">
+                            <IndianRupee size={14} className="text-blue-600 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-blue-700">Online Payment Initiated</p>
+                              <p className="text-xs text-blue-600 mt-0.5">
+                                Vendor chose online payment. Awaiting Razorpay confirmation.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                       {order.paid_at && (
-                        <p className="text-xs text-emerald-600 mb-2">💳 Paid: {formatDate(order.paid_at)}</p>
+                        <p className="text-xs text-emerald-600 mb-2">
+                          💳 Paid: {formatDate(order.paid_at)}
+                          {order.payment_method === "online" && " (Online / Razorpay)"}
+                        </p>
                       )}
                       {order.delivered_at && (
                         <p className="text-xs text-gray-500 mb-2">📦 Delivered: {formatDate(order.delivered_at)}</p>
                       )}
 
-                      {/* Bid order action: mark payment received */}
-                      {order.payment_status === "pending" &&
-                        order.order_status !== "cancelled" &&
-                        markBidOrderPaid && (
+                      {/* Bid order action buttons */}
+                      <div className="flex gap-2 flex-wrap mt-2">
+                        {/* Mark COD payment received */}
+                        {order.payment_status === "pending" &&
+                          order.order_status   !== "cancelled" &&
+                          order.payment_method !== "online" &&
+                          markBidOrderPaid && (
+                            <Button
+                              size="sm"
+                              className="bg-purple-600 hover:bg-purple-700"
+                              onClick={() => markBidOrderPaid(order.firestore_bid_id)}
+                            >
+                              <IndianRupee size={13} className="mr-1" />
+                              Mark Payment Received
+                            </Button>
+                          )}
+
+                        {/* Mark Shipped */}
+                        {order.order_status === "confirmed" && (
                           <Button
                             size="sm"
-                            className="bg-purple-600 hover:bg-purple-700 mt-1"
-                            onClick={() => markBidOrderPaid(order.firestore_bid_id)}
+                            className="bg-violet-600 hover:bg-violet-700"
+                            onClick={() => handleBidOrderStatus(order.firestore_bid_id, "shipped")}
                           >
-                            <IndianRupee size={13} className="mr-1" />
-                            Mark Payment Received
+                            <Truck size={13} className="mr-1" />
+                            Mark Shipped
                           </Button>
                         )}
+
+                        {/* Mark Delivered */}
+                        {(order.order_status === "confirmed" || order.order_status === "shipped") && (
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => handleBidOrderStatus(order.firestore_bid_id, "delivered")}
+                          >
+                            <PackageCheck size={13} className="mr-1" />
+                            Mark Delivered
+                          </Button>
+                        )}
+
+                        {/* Cancel */}
+                        {order.order_status !== "delivered" && order.order_status !== "cancelled" && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleBidOrderStatus(order.firestore_bid_id, "cancelled")}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 ))}

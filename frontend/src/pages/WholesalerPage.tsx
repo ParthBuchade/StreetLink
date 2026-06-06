@@ -1453,6 +1453,7 @@ const WholesalerPage = () => {
         updateMysqlOrderStatus={updateMysqlOrderStatus}
         markPaymentReceived={markPaymentReceived}
         markBidOrderPaid={markBidOrderPaid}
+        onBidOrderStatusUpdate={fetchMysqlBidOrders}
       />
       <Footer />
 
